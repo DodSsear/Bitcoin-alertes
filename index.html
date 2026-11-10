@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#090d16">
+<meta name="description" content="Tableau de bord Bitcoin BTC/USDT avec indicateurs techniques et alertes.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>Bitcoin Alertes</title>
+<link rel="preconnect" href="https://api.binance.com">
+<link rel="preconnect" href="https://stream.binance.com">
+<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+:root{color-scheme:dark;--bg:#090d16;--panel:#111827;--line:#263246;--muted:#91a0b7;--text:#eef4ff;--orange:#f7931a;--green:#22c98a;--red:#ff647c;--blue:#62a8ff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#142139 0,var(--bg) 48%);color:var(--text);font:15px system-ui,-apple-system,Segoe UI,sans-serif}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px max(18px,calc((100vw - 1180px)/2));border-bottom:1px solid #ffffff12;position:sticky;top:0;background:#090d16eF;backdrop-filter:blur(12px);z-index:3}
+.brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:18px}.coin{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#f7931a;color:#17110a;font-size:23px}
+.status{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}.dot{width:8px;height:8px;border-radius:50%;background:var(--red)}.dot.on{background:var(--green);box-shadow:0 0 12px #22c98a}
+main{max-width:1180px;margin:auto;padding:22px 18px 48px}.top{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}.panel{background:linear-gradient(145deg,#151f30,#101725);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 12px 32px #0003}
+.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:700}.price{font-size:clamp(30px,5vw,48px);font-weight:800;letter-spacing:-.04em;margin:7px 0}.change{font-weight:700;font-size:13px}.positive{color:var(--green)}.negative{color:var(--red)}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.metric{padding:14px;border:1px solid #ffffff12;border-radius:13px;background:#ffffff05}.metric b{display:block;font-size:20px;margin-top:7px}.muted{color:var(--muted)}
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 0 12px}.tabs{display:flex;gap:6px;flex-wrap:wrap}button,select{background:#1a2639;border:1px solid #34445e;color:var(--text);border-radius:10px;padding:9px 12px;font:inherit;cursor:pointer}button.active{background:#f7931a;color:#17110a;border-color:#f7931a;font-weight:800}button.primary{background:var(--orange);color:#1b1208;border:0;font-weight:800}button:disabled{opacity:.5;cursor:not-allowed}
+#chart{height:390px;width:100%}.indicators{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}.indicator-value{font-size:24px;font-weight:800;margin-top:8px}
+.signal{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:15px;border-radius:14px;background:#ffffff07;border:1px solid #ffffff12}.signal strong{font-size:18px}.tag{font-size:11px;font-weight:800;padding:6px 9px;border-radius:8px;background:#ffffff12}
+.buy{color:var(--green)}.sell{color:var(--red)}.neutral{color:#f5c66a}
+.bottom{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.settings{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}.note{font-size:12px;color:var(--muted);line-height:1.5;margin-top:12px}
+footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
+@media(max-width:760px){.top,.bottom{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(3,1fr)}.panel{padding:15px}#chart{height:330px}header{padding:12px 16px}}
+@media(max-width:420px){.metrics{grid-template-columns:1fr 1fr}.metric:last-child{grid-column:span 2}}
+</style>
+</head>
+<body>
+<header><div class="brand"><div class="coin">₿</div>Bitcoin Alertes</div><div class="status"><span class="dot" id="dot"></span><span id="connection">Connexion…</span></div></header>
+<main>
+<section class="top">
+ <div class="panel"><div class="eyebrow">Bitcoin / Tether · BTC/USDT</div><div class="price" id="price">—</div><div id="daily" class="change muted">Variation 24 h : —</div><div class="note">Prix du marché au comptant fourni par l’API publique Binance.</div></div>
+ <div class="panel"><div class="eyebrow">Résumé du marché</div><div class="metrics" style="margin-top:13px">
+  <div class="metric"><span class="eyebrow">Plus haut 24 h</span><b id="high">—</b></div>
+  <div class="metric"><span class="eyebrow">Plus bas 24 h</span><b id="low">—</b></div>
+  <div class="metric"><span class="eyebrow">Volume BTC</span><b id="volume">—</b></div>
+ </div></div>
+</section>
+<div class="toolbar"><div><div class="eyebrow">Graphique en chandeliers</div><div class="tabs" id="intervals" style="margin-top:9px"><button data-interval="1m" class="active">1 min</button><button data-interval="5m">5 min</button><button data-interval="15m">15 min</button><button data-interval="1h">1 h</button></div></div><button id="refresh">Actualiser</button></div>
+<section class="panel"><div id="chart"></div><div class="indicators">
+ <div class="metric"><span class="eyebrow">RSI (14)</span><div class="indicator-value" id="rsi">—</div><div class="muted" id="rsiState">En attente</div></div>
+ <div class="metric"><span class="eyebrow">EMA 9</span><div class="indicator-value" id="ema9">—</div></div>
+ <div class="metric"><span class="eyebrow">EMA 21</span><div class="indicator-value" id="ema21">—</div></div>
+</div></section>
+<section class="signal"><div><div class="eyebrow">Signal technique actuel</div><strong id="signalText" class="neutral">ANALYSE EN COURS</strong><div class="muted" id="signalReason" style="font-size:12px;margin-top:5px">Chargement des bougies…</div></div><span class="tag neutral" id="signalTag">ATTENTE</span></section>
+<section class="bottom">
+ <div class="panel"><div class="eyebrow">Alertes</div><p class="muted" style="font-size:13px">Autorise les notifications pour recevoir une alerte lorsqu’un nouveau signal confirmé apparaît.</p><div class="settings"><button class="primary" id="notify">Activer les notifications</button><button id="sound">Son : désactivé</button></div><div class="note" id="notifyState">Les notifications nécessitent l’autorisation du navigateur. Sur iPhone, installe d’abord l’app sur l’écran d’accueil et ouvre-la depuis son icône.</div></div>
+ <div class="panel"><div class="eyebrow">Paramètres d’analyse</div><div class="settings"><label for="rsiMode">Confirmation RSI</label><select id="rsiMode"><option value="50">RSI au-dessus / dessous de 50</option><option value="strict">RSI 55 / 45 (plus strict)</option></select></div><div class="note">ACHAT : croisement haussier EMA 9/21 confirmé par le RSI. VENTE : croisement baissier confirmé. Ce sont des indicateurs expérimentaux, pas des conseils financiers.</div></div>
+</section>
+<footer>Bitcoin Alertes v1 · Données publiques Binance · Aucun ordre n’est exécuté automatiquement.</footer>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let interval='1m', candles=[], socket=null, chart=null, candleSeries=null, ema9Series=null, ema21Series=null, soundOn=false, lastSignal='', lastAlertCandle=0;
+const fmt=n=>Number(n).toLocaleString('fr-CA',{minimumFractionDigits:2,maximumFractionDigits:2});
+function setConnection(ok,msg){$('dot').classList.toggle('on',ok);$('connection').textContent=msg}
+function initChart(){
+ const el=$('chart'); chart=LightweightCharts.createChart(el,{width:el.clientWidth,height:el.clientHeight,layout:{background:{color:'#111827'},textColor:'#91a0b7'},grid:{vertLines:{color:'#202c3d'},horzLines:{color:'#202c3d'}},rightPriceScale:{borderColor:'#263246'},timeScale:{borderColor:'#263246',timeVisible:true,secondsVisible:false},crosshair:{mode:0}});
+ candleSeries=chart.addCandlestickSeries({upColor:'#22c98a',downColor:'#ff647c',borderUpColor:'#22c98a',borderDownColor:'#ff647c',wickUpColor:'#22c98a',wickDownColor:'#ff647c'});
+ ema9Series=chart.addLineSeries({color:'#62a8ff',lineWidth:2,priceLineVisible:false});ema21Series=chart.addLineSeries({color:'#f7931a',lineWidth:2,priceLineVisible:false});
+ new ResizeObserver(()=>chart.applyOptions({width:el.clientWidth,height:el.clientHeight})).observe(el);
+}
+function ema(values,period){let k=2/(period+1),out=[];values.forEach((v,i)=>out.push(i===0?v:v*k+out[i-1]*(1-k)));return out}
+function rsi(values,period=14){if(values.length<=period)return null;let gains=0,losses=0;for(let i=1;i<=period;i++){let d=values[i]-values[i-1];if(d>0)gains+=d;else losses-=d}let ag=gains/period,al=losses/period;for(let i=period+1;i<values.length;i++){let d=values[i]-values[i-1];ag=(ag*(period-1)+Math.max(d,0))/period;al=(al*(period-1)+Math.max(-d,0))/period}return al===0?100:100-100/(1+ag/al)}
+function updateAnalysis(){
+ if(candles.length<25)return;
+ const closes=candles.map(c=>c.close),e9=ema(closes,9),e21=ema(closes,21),rv=rsi(closes);
+ ema9Series.setData(candles.map((c,i)=>({time:c.time,value:e9[i]})));ema21Series.setData(candles.map((c,i)=>({time:c.time,value:e21[i]})));
+ $('ema9').textContent=fmt(e9.at(-1));$('ema21').textContent=fmt(e21.at(-1));$('rsi').textContent=rv===null?'—':rv.toFixed(1);
+ $('rsiState').textContent=rv>70?'Zone de surachat':rv<30?'Zone de survente':rv>=50?'Momentum positif':'Momentum négatif';
+ const i=closes.length-1,prev=i-1,mode=$('rsiMode').value;
+ const buy=e9[prev]<=e21[prev]&&e9[i]>e21[i]&&(mode==='strict'?rv>=55:rv>=50);
+ const sell=e9[prev]>=e21[prev]&&e9[i]<e21[i]&&(mode==='strict'?rv<=45:rv<=50);
+ let type=buy?'ACHAT':sell?'VENTE':'ATTENTE';
+ $('signalText').textContent=type;$('signalText').className=buy?'buy':sell?'sell':'neutral';
+ $('signalTag').textContent=type;$('signalTag').className='tag '+(buy?'buy':sell?'sell':'neutral');
+ $('signalReason').textContent=buy?'EMA 9 vient de croiser au-dessus de EMA 21 avec RSI favorable.':sell?'EMA 9 vient de croiser sous EMA 21 avec RSI favorable.':'Aucun nouveau croisement confirmé sur la dernière bougie.';
+ if((buy||sell)&&candles[i].time!==lastAlertCandle){lastAlertCandle=candles[i].time;alertUser(type,rv)}
+}
+function alertUser(type,rv){if(soundOn){try{const ctx=new AudioContext(),o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.frequency.value=type==='ACHAT'?880:440;g.gain.value=.12;o.start();o.stop(ctx.currentTime+.22)}catch(e){}}
+ if('Notification'in window&&Notification.permission==='granted')new Notification('Bitcoin Alertes · '+type,{body:`BTC/USDT · RSI ${rv.toFixed(1)} · ${new Date().toLocaleTimeString('fr-CA')}`})}
+async function loadHistory(){
+ try{setConnection(false,'Chargement…');const r=await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=250`);if(!r.ok)throw Error('API Binance indisponible');const data=await r.json();candles=data.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4]}));candleSeries.setData(candles);chart.timeScale().fitContent();updateAnalysis();setConnection(true,'En direct');}catch(e){setConnection(false,'Hors ligne');$('signalReason').textContent=e.message}
+}
+function connectSocket(){if(socket)socket.close();socket=new WebSocket(`wss://stream.binance.com:9443/ws/btcusdt@kline_${interval}`);socket.onopen=()=>setConnection(true,'En direct');socket.onclose=()=>{setConnection(false,'Reconnexion…');setTimeout(connectSocket,3000)};socket.onerror=()=>setConnection(false,'Connexion instable');socket.onmessage=ev=>{const k=JSON.parse(ev.data).k,c={time:Math.floor(k.t/1000),open:+k.o,high:+k.h,low:+k.l,close:+k.c};let idx=candles.findIndex(x=>x.time===c.time);if(idx>=0)candles[idx]=c;else candles.push(c);if(candles.length>250)candles.shift();candleSeries.update(c);$('price').textContent=fmt(c.close)+' USDT';updateAnalysis()}}
+async function loadTicker(){try{const r=await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT');const d=await r.json();$('high').textContent=fmt(d.highPrice);$('low').textContent=fmt(d.lowPrice);$('volume').textContent=Number(d.volume).toLocaleString('fr-CA',{maximumFractionDigits:2});const p=Number(d.priceChangePercent);$('daily').textContent=`Variation 24 h : ${p>=0?'+':''}${p.toFixed(2)} %`;$('daily').className='change '+(p>=0?'positive':'negative')}catch(e){}}
+async function changeInterval(v){interval=v;document.querySelectorAll('#intervals button').forEach(b=>b.classList.toggle('active',b.dataset.interval===v));if(socket)socket.close();await loadHistory();connectSocket()}
+document.querySelectorAll('#intervals button').forEach(b=>b.onclick=()=>changeInterval(b.dataset.interval));
+$('refresh').onclick=()=>{loadHistory();loadTicker()};$('rsiMode').onchange=updateAnalysis;
+$('sound').onclick=()=>{soundOn=!soundOn;$('sound').textContent='Son : '+(soundOn?'activé':'désactivé')};
+$('notify').onclick=async()=>{if(!('Notification'in window)){$('notifyState').textContent='Notifications non prises en charge par ce navigateur.';return}const p=await Notification.requestPermission();$('notifyState').textContent=p==='granted'?'Notifications activées.':'Autorisation refusée ou non accordée.'};
+if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+initChart();loadHistory().then(connectSocket);loadTicker();setInterval(loadTicker,30000);
+</script>
+</body></html>
