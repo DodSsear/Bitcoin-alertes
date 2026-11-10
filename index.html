@@ -51,13 +51,13 @@ footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
 <section class="signal"><div><div class="eyebrow">Signal technique actuel</div><strong id="signalText" class="neutral">ANALYSE EN COURS</strong><div class="muted" id="signalReason" style="font-size:12px;margin-top:5px">Chargement des bougies…</div></div><span class="tag neutral" id="signalTag">ATTENTE</span></section>
 <section class="bottom">
  <div class="panel"><div class="eyebrow">Alertes</div><p class="muted" style="font-size:13px">Autorise les notifications pour recevoir une alerte lorsqu’un nouveau signal confirmé apparaît.</p><div class="settings"><button class="primary" id="notify">Activer les notifications</button><button id="sound">Son : désactivé</button></div><div class="note" id="notifyState">Les notifications nécessitent l’autorisation du navigateur. Sur iPhone, installe d’abord l’app sur l’écran d’accueil et ouvre-la depuis son icône.</div></div>
- <div class="panel"><div class="eyebrow">Paramètres d’analyse</div><div class="settings"><label for="rsiMode">Confirmation RSI</label><select id="rsiMode"><option value="50">RSI au-dessus / dessous de 50</option><option value="strict">RSI 55 / 45 (plus strict)</option></select></div><div class="note">ACHAT : croisement haussier EMA 9/21 confirmé par le RSI. VENTE : croisement baissier confirmé. Ce sont des indicateurs expérimentaux, pas des conseils financiers.</div></div>
+ <div class="panel"><div class="eyebrow">Paramètres d’analyse</div><div class="settings"><label for="rsiMode">Confirmation RSI</label><select id="rsiMode"><option value="50">RSI au-dessus / dessous de 50</option><option value="strict">RSI 55 / 45 (plus strict)</option></select></div><div class="note">Les signaux sont calculés uniquement sur les bougies clôturées. ACHAT/VENTE exigent un croisement EMA 9/21 et une confirmation RSI. Le réglage RSI 55/45 est plus strict. Indicateurs expérimentaux, pas des conseils financiers.</div></div>
 </section>
-<footer>Bitcoin Alertes v1 · Données publiques Binance · Aucun ordre n’est exécuté automatiquement.</footer>
+<footer>Bitcoin Alertes v1.1 · Signaux confirmés à la clôture · Données publiques Binance · Aucun ordre n’est exécuté automatiquement.</footer>
 </main>
 <script>
 const $=id=>document.getElementById(id);
-let interval='1m', candles=[], socket=null, chart=null, candleSeries=null, ema9Series=null, ema21Series=null, soundOn=false, lastSignal='', lastAlertCandle=0;
+let interval='1m', candles=[], socket=null, chart=null, candleSeries=null, ema9Series=null, ema21Series=null, soundOn=false, lastAlertCandle=0;
 const fmt=n=>Number(n).toLocaleString('fr-CA',{minimumFractionDigits:2,maximumFractionDigits:2});
 function setConnection(ok,msg){$('dot').classList.toggle('on',ok);$('connection').textContent=msg}
 function initChart(){
@@ -67,32 +67,60 @@ function initChart(){
  new ResizeObserver(()=>chart.applyOptions({width:el.clientWidth,height:el.clientHeight})).observe(el);
 }
 function ema(values,period){let k=2/(period+1),out=[];values.forEach((v,i)=>out.push(i===0?v:v*k+out[i-1]*(1-k)));return out}
-function rsi(values,period=14){if(values.length<=period)return null;let gains=0,losses=0;for(let i=1;i<=period;i++){let d=values[i]-values[i-1];if(d>0)gains+=d;else losses-=d}let ag=gains/period,al=losses/period;for(let i=period+1;i<values.length;i++){let d=values[i]-values[i-1];ag=(ag*(period-1)+Math.max(d,0))/period;al=(al*(period-1)+Math.max(-d,0))/period}return al===0?100:100-100/(1+ag/al)}
-function updateAnalysis(){
+function rsiSeries(values,period=14){
+ const out=Array(values.length).fill(null);if(values.length<=period)return out;
+ let gains=0,losses=0;
+ for(let i=1;i<=period;i++){const d=values[i]-values[i-1];if(d>0)gains+=d;else losses-=d}
+ let ag=gains/period,al=losses/period;
+ const value=()=>al===0?(ag===0?50:100):ag===0?0:100-100/(1+ag/al);
+ out[period]=value();
+ for(let i=period+1;i<values.length;i++){const d=values[i]-values[i-1];ag=(ag*(period-1)+Math.max(d,0))/period;al=(al*(period-1)+Math.max(-d,0))/period;out[i]=value()}
+ return out;
+}
+function updateAnalysis(allowAlert=false){
  if(candles.length<25)return;
- const closes=candles.map(c=>c.close),e9=ema(closes,9),e21=ema(closes,21),rv=rsi(closes);
+ const closes=candles.map(c=>c.close),e9=ema(closes,9),e21=ema(closes,21);
  ema9Series.setData(candles.map((c,i)=>({time:c.time,value:e9[i]})));ema21Series.setData(candles.map((c,i)=>({time:c.time,value:e21[i]})));
- $('ema9').textContent=fmt(e9.at(-1));$('ema21').textContent=fmt(e21.at(-1));$('rsi').textContent=rv===null?'—':rv.toFixed(1);
- $('rsiState').textContent=rv>70?'Zone de surachat':rv<30?'Zone de survente':rv>=50?'Momentum positif':'Momentum négatif';
- const i=closes.length-1,prev=i-1,mode=$('rsiMode').value;
- const buy=e9[prev]<=e21[prev]&&e9[i]>e21[i]&&(mode==='strict'?rv>=55:rv>=50);
- const sell=e9[prev]>=e21[prev]&&e9[i]<e21[i]&&(mode==='strict'?rv<=45:rv<=50);
- let type=buy?'ACHAT':sell?'VENTE':'ATTENTE';
+ const confirmed=candles.filter(c=>c.closed);
+ const confirmedCloses=confirmed.map(c=>c.close),confirmedEma9=ema(confirmedCloses,9),confirmedEma21=ema(confirmedCloses,21),confirmedRsi=rsiSeries(confirmedCloses).at(-1);
+ if(confirmed.length){$('ema9').textContent=fmt(confirmedEma9.at(-1));$('ema21').textContent=fmt(confirmedEma21.at(-1));}
+ $('rsi').textContent=confirmedRsi===null||confirmedRsi===undefined?'—':confirmedRsi.toFixed(1);
+ $('rsiState').textContent=confirmedRsi===null||confirmedRsi===undefined?'En attente':confirmedRsi>70?'Zone de surachat':confirmedRsi<30?'Zone de survente':confirmedRsi>=50?'Momentum positif':'Momentum négatif';
+ if(confirmed.length<25){setSignal('ATTENTE','En attente de 25 bougies clôturées pour confirmer les indicateurs.');return}
+ const values=confirmed.map(c=>c.close),ce9=ema(values,9),ce21=ema(values,21),crsi=rsiSeries(values),mode=$('rsiMode').value;
+ let latest=null;
+ for(let i=1;i<confirmed.length;i++){
+  const up=ce9[i-1]<=ce21[i-1]&&ce9[i]>ce21[i];
+  const down=ce9[i-1]>=ce21[i-1]&&ce9[i]<ce21[i];
+  if(!up&&!down)continue;
+  const rv=crsi[i],ok=rv!==null&&(up?(mode==='strict'?rv>=55:rv>=50):(mode==='strict'?rv<=45:rv<=50));
+  latest={type:ok?(up?'ACHAT':'VENTE'):'ATTENTE',time:confirmed[i].time,rsi:rv,up,down,confirmed:true};
+ }
+ if(!latest){setSignal('ATTENTE','Aucun croisement EMA 9/21 confirmé dans les bougies clôturées.');return}
+ let reason;
+ if(latest.type==='ACHAT')reason=`Croisement haussier EMA 9/21 confirmé à la clôture · RSI ${latest.rsi.toFixed(1)} (seuil ${mode==='strict'?'55':'50'}).`;
+ else if(latest.type==='VENTE')reason=`Croisement baissier EMA 9/21 confirmé à la clôture · RSI ${latest.rsi.toFixed(1)} (seuil ${mode==='strict'?'45':'50'}).`;
+ else reason=`Croisement EMA détecté, mais RSI ${latest.rsi===null?'indisponible':latest.rsi.toFixed(1)} ne confirme pas le signal.`;
+ reason+=` Bougie clôturée à ${new Date(latest.time*1000).toLocaleTimeString('fr-CA',{hour:'2-digit',minute:'2-digit'})}.`;
+ setSignal(latest.type,reason);
+ if(latest.time!==lastAlertCandle){if(allowAlert&&(latest.type==='ACHAT'||latest.type==='VENTE'))alertUser(latest.type,latest.rsi);lastAlertCandle=latest.time}
+}
+function setSignal(type,reason){
+ const buy=type==='ACHAT',sell=type==='VENTE';
  $('signalText').textContent=type;$('signalText').className=buy?'buy':sell?'sell':'neutral';
  $('signalTag').textContent=type;$('signalTag').className='tag '+(buy?'buy':sell?'sell':'neutral');
- $('signalReason').textContent=buy?'EMA 9 vient de croiser au-dessus de EMA 21 avec RSI favorable.':sell?'EMA 9 vient de croiser sous EMA 21 avec RSI favorable.':'Aucun nouveau croisement confirmé sur la dernière bougie.';
- if((buy||sell)&&candles[i].time!==lastAlertCandle){lastAlertCandle=candles[i].time;alertUser(type,rv)}
+ $('signalReason').textContent=reason;
 }
 function alertUser(type,rv){if(soundOn){try{const ctx=new AudioContext(),o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.frequency.value=type==='ACHAT'?880:440;g.gain.value=.12;o.start();o.stop(ctx.currentTime+.22)}catch(e){}}
  if('Notification'in window&&Notification.permission==='granted')new Notification('Bitcoin Alertes · '+type,{body:`BTC/USDT · RSI ${rv.toFixed(1)} · ${new Date().toLocaleTimeString('fr-CA')}`})}
 async function loadHistory(){
- try{setConnection(false,'Chargement…');const r=await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=250`);if(!r.ok)throw Error('API Binance indisponible');const data=await r.json();candles=data.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4]}));candleSeries.setData(candles);chart.timeScale().fitContent();updateAnalysis();setConnection(true,'En direct');}catch(e){setConnection(false,'Hors ligne');$('signalReason').textContent=e.message}
+ try{setConnection(false,'Chargement…');const r=await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=250`);if(!r.ok)throw Error('API Binance indisponible');const data=await r.json();candles=data.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],closeTime:+k[6],closed:+k[6]<Date.now()}));candleSeries.setData(candles);chart.timeScale().fitContent();updateAnalysis();setConnection(true,'En direct');}catch(e){setConnection(false,'Hors ligne');$('signalReason').textContent=e.message}
 }
-function connectSocket(){if(socket)socket.close();socket=new WebSocket(`wss://stream.binance.com:9443/ws/btcusdt@kline_${interval}`);socket.onopen=()=>setConnection(true,'En direct');socket.onclose=()=>{setConnection(false,'Reconnexion…');setTimeout(connectSocket,3000)};socket.onerror=()=>setConnection(false,'Connexion instable');socket.onmessage=ev=>{const k=JSON.parse(ev.data).k,c={time:Math.floor(k.t/1000),open:+k.o,high:+k.h,low:+k.l,close:+k.c};let idx=candles.findIndex(x=>x.time===c.time);if(idx>=0)candles[idx]=c;else candles.push(c);if(candles.length>250)candles.shift();candleSeries.update(c);$('price').textContent=fmt(c.close)+' USDT';updateAnalysis()}}
+function connectSocket(){if(socket)socket.close();socket=new WebSocket(`wss://stream.binance.com:9443/ws/btcusdt@kline_${interval}`);socket.onopen=()=>setConnection(true,'En direct');socket.onclose=()=>{setConnection(false,'Reconnexion…');setTimeout(connectSocket,3000)};socket.onerror=()=>setConnection(false,'Connexion instable');socket.onmessage=ev=>{const k=JSON.parse(ev.data).k,c={time:Math.floor(k.t/1000),open:+k.o,high:+k.h,low:+k.l,close:+k.c,closeTime:+k.T,closed:!!k.x};let idx=candles.findIndex(x=>x.time===c.time),newlyClosed=false;if(idx>=0)candles[idx]=c;else{if(candles.length&&!candles[candles.length-1].closed){candles[candles.length-1].closed=true;newlyClosed=true}candles.push(c);}if(candles.length>250)candles.shift();candleSeries.update(c);$('price').textContent=fmt(c.close)+' USDT';updateAnalysis(!!k.x||newlyClosed)}}
 async function loadTicker(){try{const r=await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT');const d=await r.json();$('high').textContent=fmt(d.highPrice);$('low').textContent=fmt(d.lowPrice);$('volume').textContent=Number(d.volume).toLocaleString('fr-CA',{maximumFractionDigits:2});const p=Number(d.priceChangePercent);$('daily').textContent=`Variation 24 h : ${p>=0?'+':''}${p.toFixed(2)} %`;$('daily').className='change '+(p>=0?'positive':'negative')}catch(e){}}
 async function changeInterval(v){interval=v;document.querySelectorAll('#intervals button').forEach(b=>b.classList.toggle('active',b.dataset.interval===v));if(socket)socket.close();await loadHistory();connectSocket()}
 document.querySelectorAll('#intervals button').forEach(b=>b.onclick=()=>changeInterval(b.dataset.interval));
-$('refresh').onclick=()=>{loadHistory();loadTicker()};$('rsiMode').onchange=updateAnalysis;
+$('refresh').onclick=()=>{loadHistory();loadTicker()};$('rsiMode').onchange=()=>updateAnalysis(false);
 $('sound').onclick=()=>{soundOn=!soundOn;$('sound').textContent='Son : '+(soundOn?'activé':'désactivé')};
 $('notify').onclick=async()=>{if(!('Notification'in window)){$('notifyState').textContent='Notifications non prises en charge par ce navigateur.';return}const p=await Notification.requestPermission();$('notifyState').textContent=p==='granted'?'Notifications activées.':'Autorisation refusée ou non accordée.'};
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});

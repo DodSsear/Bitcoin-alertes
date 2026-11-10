@@ -1,4 +1,4 @@
-BITCOIN ALERTES — VERSION 1
+BITCOIN ALERTES — VERSION 1.1
 
 CONTENU
 - index.html : application complète
@@ -27,12 +27,14 @@ INSTALLATION WINDOWS
 DONNÉES ET ALERTES
 - Prix, historique et flux temps réel : API publique Binance BTCUSDT.
 - RSI 14, EMA 9 et EMA 21 calculés dans le navigateur.
-- Signal ACHAT : croisement haussier EMA9/EMA21 avec RSI de confirmation.
-- Signal VENTE : croisement baissier EMA9/EMA21 avec RSI de confirmation.
-- Les alertes sont déclenchées lorsqu'un nouveau signal apparaît sur les données reçues.
+- Signal ACHAT : croisement haussier EMA9/EMA21 confirmé par le RSI sur une bougie clôturée.
+- Signal VENTE : croisement baissier EMA9/EMA21 confirmé par le RSI sur une bougie clôturée.
+- Un croisement sans confirmation RSI affiche ATTENTE.
+- Le signal est évalué uniquement à la clôture d'une bougie; il ne change pas pendant sa formation.
+- Les alertes sont déclenchées uniquement lorsqu'une nouvelle bougie clôturée confirme un signal.
 - Aucun ordre n'est envoyé et aucune clé API n'est requise.
 
-LIMITES DE CETTE V1
+LIMITES DE CETTE V1.1
 - L'application doit rester ouverte pour recevoir le flux WebSocket et analyser les signaux.
 - Les notifications en arrière-plan sur iPhone exigent une PWA publiée et les conditions iOS compatibles; cette V1 ne contient pas de serveur push.
 - Le graphique utilise Lightweight Charts chargé depuis un CDN; une connexion Internet est requise.
