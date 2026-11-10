@@ -24,7 +24,7 @@ main{max-width:1180px;margin:auto;padding:22px 18px 48px}.top{display:grid;grid-
 .toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 0 12px}.tabs{display:flex;gap:6px;flex-wrap:wrap}button,select{background:#1a2639;border:1px solid #34445e;color:var(--text);border-radius:10px;padding:9px 12px;font:inherit;cursor:pointer}button.active{background:#f7931a;color:#17110a;border-color:#f7931a;font-weight:800}button.primary{background:var(--orange);color:#1b1208;border:0;font-weight:800}button:disabled{opacity:.5;cursor:not-allowed}
 #chart{height:390px;width:100%}.indicators{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}.indicator-value{font-size:24px;font-weight:800;margin-top:8px}
 .signal{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:15px;border-radius:14px;background:#ffffff07;border:1px solid #ffffff12}.signal strong{font-size:18px}.tag{font-size:11px;font-weight:800;padding:6px 9px;border-radius:8px;background:#ffffff12}
-.buy{color:var(--green)}.sell{color:var(--red)}.neutral{color:#f5c66a}
+.buy{color:var(--green)}.sell{color:var(--red)}.neutral{color:#f5c66a}.signal-meta{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--muted)}.signal-meta b{color:var(--text);font-weight:700}
 .bottom{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.settings{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}.note{font-size:12px;color:var(--muted);line-height:1.5;margin-top:12px}
 footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
 @media(max-width:760px){.top,.bottom{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(3,1fr)}.panel{padding:15px}#chart{height:330px}header{padding:12px 16px}}
@@ -49,11 +49,12 @@ footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
  <div class="metric"><span class="eyebrow">EMA 21</span><div class="indicator-value" id="ema21">—</div></div>
 </div></section>
 <section class="signal"><div><div class="eyebrow">Signal technique actuel</div><strong id="signalText" class="neutral">ANALYSE EN COURS</strong><div class="muted" id="signalReason" style="font-size:12px;margin-top:5px">Chargement des bougies…</div></div><span class="tag neutral" id="signalTag">ATTENTE</span></section>
+<div class="signal-meta"><span>Force estimée : <b id="signalStrength">—</b></span><span>Dernier croisement : <b id="signalTime">—</b></span></div>
 <section class="bottom">
  <div class="panel"><div class="eyebrow">Alertes</div><p class="muted" style="font-size:13px">Autorise les notifications pour recevoir une alerte lorsqu’un nouveau signal confirmé apparaît.</p><div class="settings"><button class="primary" id="notify">Activer les notifications</button><button id="sound">Son : désactivé</button></div><div class="note" id="notifyState">Les notifications nécessitent l’autorisation du navigateur. Sur iPhone, installe d’abord l’app sur l’écran d’accueil et ouvre-la depuis son icône.</div></div>
- <div class="panel"><div class="eyebrow">Paramètres d’analyse</div><div class="settings"><label for="rsiMode">Confirmation RSI</label><select id="rsiMode"><option value="50">RSI au-dessus / dessous de 50</option><option value="strict">RSI 55 / 45 (plus strict)</option></select></div><div class="note">Les signaux sont calculés uniquement sur les bougies clôturées. ACHAT/VENTE exigent un croisement EMA 9/21 et une confirmation RSI. Le réglage RSI 55/45 est plus strict. Indicateurs expérimentaux, pas des conseils financiers.</div></div>
+ <div class="panel"><div class="eyebrow">Paramètres d’analyse</div><div class="settings"><label for="rsiMode">Confirmation RSI</label><select id="rsiMode"><option value="50">RSI au-dessus / dessous de 50</option><option value="strict">RSI 55 / 45 (plus strict)</option></select></div><div class="note">Les signaux sont calculés uniquement sur les bougies clôturées. ACHAT/VENTE exigent un croisement EMA 9/21 et une confirmation RSI. La force (faible/moyenne/forte) est une estimation basée sur l’écart des EMA et la marge du RSI, pas une probabilité de réussite. RSI 55/45 est plus strict. Ceci n’est pas un conseil financier.</div></div>
 </section>
-<footer>Bitcoin Alertes v1.1 · Signaux confirmés à la clôture · Données publiques Binance · Aucun ordre n’est exécuté automatiquement.</footer>
+<footer>Bitcoin Alertes v1.2 · Signaux confirmés à la clôture · Données publiques Binance · Aucun ordre n’est exécuté automatiquement.</footer>
 </main>
 <script>
 const $=id=>document.getElementById(id);
@@ -86,7 +87,7 @@ function updateAnalysis(allowAlert=false){
  if(confirmed.length){$('ema9').textContent=fmt(confirmedEma9.at(-1));$('ema21').textContent=fmt(confirmedEma21.at(-1));}
  $('rsi').textContent=confirmedRsi===null||confirmedRsi===undefined?'—':confirmedRsi.toFixed(1);
  $('rsiState').textContent=confirmedRsi===null||confirmedRsi===undefined?'En attente':confirmedRsi>70?'Zone de surachat':confirmedRsi<30?'Zone de survente':confirmedRsi>=50?'Momentum positif':'Momentum négatif';
- if(confirmed.length<25){setSignal('ATTENTE','En attente de 25 bougies clôturées pour confirmer les indicateurs.');return}
+ if(confirmed.length<25){setSignal('ATTENTE','En attente de 25 bougies clôturées pour confirmer les indicateurs.');$('signalStrength').textContent='—';$('signalTime').textContent='—';return}
  const values=confirmed.map(c=>c.close),ce9=ema(values,9),ce21=ema(values,21),crsi=rsiSeries(values),mode=$('rsiMode').value;
  let latest=null;
  for(let i=1;i<confirmed.length;i++){
@@ -96,12 +97,18 @@ function updateAnalysis(allowAlert=false){
   const rv=crsi[i],ok=rv!==null&&(up?(mode==='strict'?rv>=55:rv>=50):(mode==='strict'?rv<=45:rv<=50));
   latest={type:ok?(up?'ACHAT':'VENTE'):'ATTENTE',time:confirmed[i].time,rsi:rv,up,down,confirmed:true};
  }
- if(!latest){setSignal('ATTENTE','Aucun croisement EMA 9/21 confirmé dans les bougies clôturées.');return}
+ if(!latest){setSignal('ATTENTE','Aucun croisement EMA 9/21 confirmé dans les bougies clôturées.');$('signalStrength').textContent='—';$('signalTime').textContent='Aucun récent';return}
  let reason;
  if(latest.type==='ACHAT')reason=`Croisement haussier EMA 9/21 confirmé à la clôture · RSI ${latest.rsi.toFixed(1)} (seuil ${mode==='strict'?'55':'50'}).`;
  else if(latest.type==='VENTE')reason=`Croisement baissier EMA 9/21 confirmé à la clôture · RSI ${latest.rsi.toFixed(1)} (seuil ${mode==='strict'?'45':'50'}).`;
  else reason=`Croisement EMA détecté, mais RSI ${latest.rsi===null?'indisponible':latest.rsi.toFixed(1)} ne confirme pas le signal.`;
- reason+=` Bougie clôturée à ${new Date(latest.time*1000).toLocaleTimeString('fr-CA',{hour:'2-digit',minute:'2-digit'})}.`;
+ const signalDate=new Date(latest.time*1000);
+ const signalClock=signalDate.toLocaleString('fr-CA',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+ reason+=` Bougie clôturée le ${signalClock}.`;
+ const gap=Math.abs(ce9.at(-1)-ce21.at(-1))/values.at(-1)*100;
+ const rsiMargin=latest.rsi===null?0:(latest.type==='ACHAT'?latest.rsi-(mode==='strict'?55:50):(mode==='strict'?45:50)-latest.rsi);
+ const strength=latest.type==='ATTENTE'?'Non confirmé':(gap>=0.15&&rsiMargin>=5?'Forte':gap>=0.05&&rsiMargin>=2?'Moyenne':'Faible');
+ $('signalStrength').textContent=strength; $('signalTime').textContent=signalClock;
  setSignal(latest.type,reason);
  if(latest.time!==lastAlertCandle){if(allowAlert&&(latest.type==='ACHAT'||latest.type==='VENTE'))alertUser(latest.type,latest.rsi);lastAlertCandle=latest.time}
 }
