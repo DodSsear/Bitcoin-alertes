@@ -9,8 +9,6 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>Bitcoin Alertes</title>
-<link rel="preconnect" href="https://api.binance.com">
-<link rel="preconnect" href="https://stream.binance.com">
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 :root{color-scheme:dark;--bg:#090d16;--panel:#111827;--line:#263246;--muted:#91a0b7;--text:#eef4ff;--orange:#f7931a;--green:#22c98a;--red:#ff647c;--blue:#62a8ff}
@@ -35,7 +33,7 @@ footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
 <header><div class="brand"><div class="coin">₿</div>Bitcoin Alertes</div><div class="status"><span class="dot" id="dot"></span><span id="connection">Connexion…</span></div></header>
 <main>
 <section class="top">
- <div class="panel"><div class="eyebrow">Bitcoin / Tether · BTC/USDT</div><div class="price" id="price">—</div><div id="daily" class="change muted">Variation 24 h : —</div><div class="note">Prix du marché au comptant fourni par l’API publique Binance.</div></div>
+ <div class="panel"><div class="eyebrow">Bitcoin en dollars canadiens · BTC/CAD</div><div class="price" id="price">—</div><div id="daily" class="change muted">Variation 24 h : —</div><div class="note">Prix du marché au comptant fourni par le flux public NDAX.</div></div>
  <div class="panel"><div class="eyebrow">Résumé du marché</div><div class="metrics" style="margin-top:13px">
   <div class="metric"><span class="eyebrow">Plus haut 24 h</span><b id="high">—</b></div>
   <div class="metric"><span class="eyebrow">Plus bas 24 h</span><b id="low">—</b></div>
@@ -79,7 +77,7 @@ footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
  <div style="overflow:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);text-align:left"><th style="padding:8px">#</th><th>Paramètres</th><th>Rendement net</th><th>Trades</th><th>Drawdown</th></tr></thead><tbody id="simResults"><tr><td colspan="5" style="padding:10px;color:var(--muted)">Aucun résultat pour le moment.</td></tr></tbody></table></div>
 </section>
 
-<footer>Bitcoin Alertes v1.4 · laboratoire de simulation · Données de marché BTC/CAD via NDAX; signaux historiques v1.3 encore alimentés par Binance.</footer>
+<footer>Bitcoin Alertes v1.4 · Données BTC/CAD et signaux techniques via le flux public NDAX. Simulation uniquement.</footer>
 
 
 </main>
@@ -153,15 +151,19 @@ function setSignal(type,reason){
  $('signalReason').textContent=reason;
 }
 function alertUser(type,rv){if(soundOn){try{const ctx=new AudioContext(),o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.frequency.value=type==='ACHAT'?880:440;g.gain.value=.12;o.start();o.stop(ctx.currentTime+.22)}catch(e){}}
- if('Notification'in window&&Notification.permission==='granted')new Notification('Bitcoin Alertes · '+type,{body:`BTC/USDT · RSI ${rv.toFixed(1)} · ${new Date().toLocaleTimeString('fr-CA')}`})}
-async function loadHistory(){
- try{setConnection(false,'Chargement…');const r=await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=250`);if(!r.ok)throw Error('API Binance indisponible');const data=await r.json();candles=data.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],closeTime:+k[6],closed:+k[6]<Date.now()}));candleSeries.setData(candles);chart.timeScale().fitContent();updateAnalysis();setConnection(true,'En direct');}catch(e){setConnection(false,'Hors ligne');$('signalReason').textContent=e.message}
+ if('Notification'in window&&Notification.permission==='granted')new Notification('Bitcoin Alertes · '+type,{body:`BTC/CAD · RSI ${rv.toFixed(1)} · ${new Date().toLocaleTimeString('fr-CA')}`})}
+// Le tableau de bord principal est alimenté par les mêmes bougies BTC/CAD NDAX que le simulateur.
+function loadHistory(){return Promise.resolve()}
+function connectSocket(){}
+function loadTicker(){renderMainFromNDAX()}
+async function changeInterval(v){
+ interval=v;document.querySelectorAll('#intervals button').forEach(b=>b.classList.toggle('active',b.dataset.interval===v));
+ const seconds=({'1m':60,'5m':300,'15m':900,'1h':3600})[v]||60;
+ $('simInterval').value=String(seconds);SIM.bars=[];connectNDAX();
 }
-function connectSocket(){if(socket)socket.close();socket=new WebSocket(`wss://stream.binance.com:9443/ws/btcusdt@kline_${interval}`);socket.onopen=()=>setConnection(true,'En direct');socket.onclose=()=>{setConnection(false,'Reconnexion…');setTimeout(connectSocket,3000)};socket.onerror=()=>setConnection(false,'Connexion instable');socket.onmessage=ev=>{const k=JSON.parse(ev.data).k,c={time:Math.floor(k.t/1000),open:+k.o,high:+k.h,low:+k.l,close:+k.c,closeTime:+k.T,closed:!!k.x};let idx=candles.findIndex(x=>x.time===c.time),newlyClosed=false;if(idx>=0)candles[idx]=c;else{if(candles.length&&!candles[candles.length-1].closed){candles[candles.length-1].closed=true;newlyClosed=true}candles.push(c);}if(candles.length>250)candles.shift();candleSeries.update(c);$('price').textContent=fmt(c.close)+' USDT';updateAnalysis(!!k.x||newlyClosed)}}
-async function loadTicker(){try{const r=await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT');const d=await r.json();$('high').textContent=fmt(d.highPrice);$('low').textContent=fmt(d.lowPrice);$('volume').textContent=Number(d.volume).toLocaleString('fr-CA',{maximumFractionDigits:2});const p=Number(d.priceChangePercent);$('daily').textContent=`Variation 24 h : ${p>=0?'+':''}${p.toFixed(2)} %`;$('daily').className='change '+(p>=0?'positive':'negative')}catch(e){}}
-async function changeInterval(v){interval=v;document.querySelectorAll('#intervals button').forEach(b=>b.classList.toggle('active',b.dataset.interval===v));if(socket)socket.close();await loadHistory();connectSocket()}
 document.querySelectorAll('#intervals button').forEach(b=>b.onclick=()=>changeInterval(b.dataset.interval));
-$('refresh').onclick=()=>{loadHistory();loadTicker()};$('rsiMode').onchange=()=>updateAnalysis(false);
+$('refresh').onclick=()=>{SIM.bars=[];connectNDAX()};
+$('rsiMode').onchange=()=>updateAnalysis(false);
 $('sound').onclick=()=>{soundOn=!soundOn;$('sound').textContent='Son : '+(soundOn?'activé':'désactivé')};
 $('notify').onclick=async()=>{if(!('Notification'in window)){$('notifyState').textContent='Notifications non prises en charge par ce navigateur.';return}const p=await Notification.requestPermission();$('notifyState').textContent=p==='granted'?'Notifications activées.':'Autorisation refusée ou non accordée.'};
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
@@ -172,6 +174,22 @@ const simFmt=n=>Number(n).toLocaleString('fr-CA',{minimumFractionDigits:2,maximu
 function simStatus(t,ok=false){$('simStatus').textContent=t;$('simStatus').className='tag '+(ok?'buy':'neutral')}
 function ndaxSend(name,payload){if(!SIM.ws||SIM.ws.readyState!==1)throw Error('WebSocket NDAX non connecté');const i=SIM.seq;SIM.seq+=2;SIM.ws.send(JSON.stringify({m:0,i,n,o:JSON.stringify(payload)}));return i}
 function parseNDAXPayload(o){try{return typeof o==='string'?JSON.parse(o):o}catch(e){return null}}
+function renderMainFromNDAX(){
+ const bars=SIM.bars;if(!bars.length)return;
+ const last=bars[bars.length-1];$('price').textContent=simFmt(last.close)+' $ CAD';
+ const now=Date.now()/1000,day=bars.filter(b=>b.time>=now-86400);
+ const windowBars=day.length?day:bars;
+ $('high').textContent=simFmt(Math.max(...windowBars.map(b=>b.high)))+' $';
+ $('low').textContent=simFmt(Math.min(...windowBars.map(b=>b.low)))+' $';
+ $('volume').textContent=windowBars.reduce((a,b)=>a+(b.volume||0),0).toLocaleString('fr-CA',{maximumFractionDigits:4});
+ const base=windowBars[0].open||windowBars[0].close,pct=base?(last.close/base-1)*100:0;
+ $('daily').textContent=`Variation estimée sur la période chargée : ${pct>=0?'+':''}${pct.toFixed(2)} %`;$('daily').className='change '+(pct>=0?'positive':'negative');
+ $('ndaxPrice').textContent=simFmt(last.close)+' CAD';
+ candles=bars.slice(-500).map((b,i,a)=>({time:b.time,open:b.open,high:b.high,low:b.low,close:b.close,closed:i<a.length-1}));
+ if(candleSeries){candleSeries.setData(candles);chart.timeScale().fitContent();updateAnalysis(false)}
+ setConnection(true,'NDAX · BTC/CAD');
+}
+function subscribeNDAX(){if(!SIM.inst)return;SIM.bars=[];try{ndaxSend('SubscribeTicker',{OMSId:SIM.oms,InstrumentId:SIM.inst.instrumentId,Interval:Number($('simInterval').value),IncludeLastCount:500});}catch(e){$('simLog').textContent=e.message}}
 function connectNDAX(){
  if(SIM.ws)try{SIM.ws.close()}catch(e){}
  simStatus('Connexion NDAX…');SIM.ws=new WebSocket('wss://api.ndax.io/WSGateway/');
@@ -182,12 +200,12 @@ function connectNDAX(){
    SIM.inst=d.find(x=>String(x.symbol||'').toUpperCase()==='BTCCAD'||(String(x.product1Symbol||'').toUpperCase()==='BTC'&&String(x.product2Symbol||'').toUpperCase()==='CAD'));
    if(!SIM.inst){simStatus('Paire BTC/CAD introuvable');$('simLog').textContent='La liste NDAX reçue ne contient pas de paire BTC/CAD. Aucune donnée de substitution ne sera utilisée.';return}
    $('simLog').textContent=`Instrument BTC/CAD trouvé (ID ${SIM.inst.instrumentId}). Chargement du flux public…`;
-   ndaxSend('SubscribeTicker',{OMSId:SIM.oms,InstrumentId:SIM.inst.instrumentId,Interval:Number($('simInterval').value),IncludeLastCount:500});
+   subscribeNDAX();
   }
   if(f.n==='SubscribeTicker'||f.n==='TickerDataUpdateEvent'){
    let rows=Array.isArray(d)?d:(d&&Array.isArray(d.Intervals)?d.Intervals:[]);
    if(rows.length){rows.forEach(r=>{if(!Array.isArray(r)||r.length<9)return;const b={time:Math.floor(Number(r[0])/1000),high:+r[1],low:+r[2],open:+r[3],close:+r[4],volume:+r[5],bid:+r[6],ask:+r[7]};if(!Number.isFinite(b.close)||b.close<=0)return;let ix=SIM.bars.findIndex(x=>x.time===b.time);if(ix>=0)SIM.bars[ix]=b;else SIM.bars.push(b)});SIM.bars.sort((a,b)=>a.time-b.time);if(SIM.bars.length>1000)SIM.bars=SIM.bars.slice(-1000);}
-   const last=SIM.bars.at(-1);if(last){SIM.latest=last.close;$('ndaxPrice').textContent=simFmt(last.close)+' CAD';simStatus('NDAX · données reçues',true);$('simLog').textContent=`${SIM.bars.length} bougies reçues sur BTC/CAD. Dernière mise à jour : ${new Date(last.time*1000).toLocaleString('fr-CA')}.`}
+   const last=SIM.bars.at(-1);if(last){SIM.latest=last.close;$('ndaxPrice').textContent=simFmt(last.close)+' CAD';renderMainFromNDAX();simStatus('NDAX · données reçues',true);$('simLog').textContent=`${SIM.bars.length} bougies reçues sur BTC/CAD. Dernière mise à jour : ${new Date(last.time*1000).toLocaleString('fr-CA')}.`}
   }
  };
  SIM.ws.onerror=()=>{simStatus('Erreur de connexion');$('simLog').textContent='Impossible de joindre le flux public NDAX depuis ce navigateur. Vérifie la connexion puis actualise.'};
@@ -218,9 +236,9 @@ function optimizeNDAX(){
  const best=top[0],b=best.b;$('bestParams').textContent=`EMA ${best.p.fast}/${best.p.slow} · RSI ≥ ${best.p.rsi} · SL ${best.p.sl}% · TP ${best.p.tp}%`;$('bestExplain').textContent=`Apprentissage : ${best.a.ret.toFixed(2)} % (${best.a.trades} trades). Validation séparée : ${b.ret.toFixed(2)} % net, ${b.trades} trades.`;$('simReturn').textContent=(b.ret>=0?'+':'')+b.ret.toFixed(2)+' %';$('simReturn').className=b.ret>=0?'positive':'negative';$('simTrades').textContent=b.trades;$('simDrawdown').textContent=b.dd.toFixed(2)+' %';$('simGrade').textContent=b.trades<3?'PEU DE TRADES':b.ret>0?'À SURVEILLER':'NON RENTABLE';$('simGrade').className='tag '+(b.ret>0&&b.trades>=3?'buy':'neutral');$('simResults').innerHTML=top.map((x,i)=>`<tr style="border-top:1px solid #ffffff14"><td style="padding:8px">${i+1}</td><td>EMA ${x.p.fast}/${x.p.slow}, RSI ${x.p.rsi}, SL ${x.p.sl}%, TP ${x.p.tp}%</td><td class="${x.b.ret>=0?'positive':'negative'}">${x.b.ret.toFixed(2)}%</td><td>${x.b.trades}</td><td>${x.b.dd.toFixed(2)}%</td></tr>`).join('');$('simLog').textContent=`Optimisation terminée sur ${train.length} bougies d’apprentissage et ${test.length} bougies de validation. ${combos.length} combinaisons évaluées. Les résultats restent exploratoires : historique court et pas de garantie de performance future.`;
 }
 $('runOptimizer').addEventListener('click',optimizeNDAX);
-$('simInterval').addEventListener('change',()=>{SIM.bars=[];connectNDAX()});
+$('simInterval').addEventListener('change',()=>{const v=String($('simInterval').value),label=({'60':'1m','300':'5m','900':'15m','3600':'1h'})[v]||'1m';interval=label;document.querySelectorAll('#intervals button').forEach(b=>b.classList.toggle('active',b.dataset.interval===label));SIM.bars=[];connectNDAX()});
 SIM.ready=true;connectNDAX();
 
-initChart();loadHistory().then(connectSocket);loadTicker();setInterval(loadTicker,30000);
+initChart();setConnection(false,'Connexion NDAX…');
 </script>
 </body></html>

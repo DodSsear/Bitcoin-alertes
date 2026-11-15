@@ -1,7 +1,7 @@
 {
   "name": "Bitcoin Alertes",
   "short_name": "BTC Alertes",
-  "description": "Suivi BTC/USDT et alertes techniques",
+  "description": "Suivi BTC/CAD et alertes techniques sur NDAX",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#090d16",
