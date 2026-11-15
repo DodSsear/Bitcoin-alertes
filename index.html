@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#090d16">
-<meta name="description" content="Tableau de bord Bitcoin BTC/USDT avec indicateurs techniques et alertes.">
+<meta name="description" content="Bitcoin Alertes v1.4 avec laboratoire de simulation BTC/CAD NDAX.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
@@ -54,7 +54,34 @@ footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
  <div class="panel"><div class="eyebrow">Alertes</div><p class="muted" style="font-size:13px">Autorise les notifications pour recevoir une alerte lorsqu’un nouveau signal confirmé apparaît.</p><div class="settings"><button class="primary" id="notify">Activer les notifications</button><button id="sound">Son : désactivé</button></div><div class="note" id="notifyState">Les notifications nécessitent l’autorisation du navigateur. Sur iPhone, installe d’abord l’app sur l’écran d’accueil et ouvre-la depuis son icône.</div></div>
  <div class="panel"><div class="eyebrow">Paramètres d’analyse</div><div class="settings"><label for="rsiMode">Confirmation RSI</label><select id="rsiMode"><option value="50">RSI au-dessus / dessous de 50</option><option value="strict">RSI 55 / 45 (plus strict)</option></select></div><div class="note">Les signaux sont calculés uniquement sur les bougies clôturées. ACHAT/VENTE exigent un croisement EMA 9/21 et une confirmation RSI. La force (faible/moyenne/forte) est une estimation basée sur l’écart des EMA et la marge du RSI, pas une probabilité de réussite. RSI 55/45 est plus strict. Ceci n’est pas un conseil financier.</div></div>
 </section>
-<footer>Bitcoin Alertes v1.3 · Signaux confirmés à la clôture · Données publiques Binance · Aucun ordre n’est exécuté automatiquement.</footer>
+
+<section class="panel" id="simulator" style="margin-top:16px;border-color:#3b5d83">
+ <div class="score-head"><div><div class="eyebrow">AutoTrader · laboratoire de simulation</div><h2 style="margin:6px 0 0;font-size:22px">Optimisation BTC/CAD · NDAX</h2><div class="note" style="margin-top:5px">Simulation uniquement. Aucun ordre n’est envoyé à NDAX.</div></div><span class="tag neutral" id="simStatus">Connexion NDAX…</span></div>
+ <div class="metrics" style="margin-top:14px">
+  <div class="metric"><span class="eyebrow">Capital virtuel</span><b>500,00 $</b></div>
+  <div class="metric"><span class="eyebrow">Mise maximale</span><b>100,00 $</b></div>
+  <div class="metric"><span class="eyebrow">Prix BTC/CAD</span><b id="ndaxPrice">—</b></div>
+ </div>
+ <div class="settings" style="margin-top:14px">
+  <label for="simInterval">Bougies</label><select id="simInterval"><option value="60">1 minute</option><option value="300">5 minutes</option><option value="900">15 minutes</option><option value="3600">1 heure</option></select>
+  <label for="simFee">Frais par côté (%)</label><input id="simFee" type="number" min="0" max="2" step="0.01" value="0.20" style="width:95px">
+  <label for="simSlip">Glissement par côté (%)</label><input id="simSlip" type="number" min="0" max="1" step="0.01" value="0.05" style="width:95px">
+  <button class="primary" id="runOptimizer">Optimiser les stratégies</button>
+ </div>
+ <div class="note">Les frais initiaux sont une hypothèse modifiable de 0,20 % par côté, et le glissement de 0,05 % est une hypothèse de simulation, pas une cotation NDAX. L’optimiseur utilise une séparation chronologique 70 % apprentissage / 30 % validation.</div>
+ <div class="metrics" style="margin-top:14px">
+  <div class="metric"><span class="eyebrow">Rendement net validation</span><b id="simReturn">—</b></div>
+  <div class="metric"><span class="eyebrow">Transactions validation</span><b id="simTrades">—</b></div>
+  <div class="metric"><span class="eyebrow">Perte max. (drawdown)</span><b id="simDrawdown">—</b></div>
+ </div>
+ <div class="signal" style="margin-top:12px"><div><div class="eyebrow">Meilleure combinaison validée</div><strong id="bestParams">En attente des données NDAX</strong><div class="muted" id="bestExplain" style="font-size:12px;margin-top:5px">Il faut au moins 80 bougies utilisables.</div></div><span class="tag neutral" id="simGrade">NON TESTÉ</span></div>
+ <div class="note" id="simLog">Le flux public NDAX est en cours d’initialisation.</div>
+ <div style="overflow:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);text-align:left"><th style="padding:8px">#</th><th>Paramètres</th><th>Rendement net</th><th>Trades</th><th>Drawdown</th></tr></thead><tbody id="simResults"><tr><td colspan="5" style="padding:10px;color:var(--muted)">Aucun résultat pour le moment.</td></tr></tbody></table></div>
+</section>
+
+<footer>Bitcoin Alertes v1.4 · laboratoire de simulation · Données de marché BTC/CAD via NDAX; signaux historiques v1.3 encore alimentés par Binance.</footer>
+
+
 </main>
 <script>
 const $=id=>document.getElementById(id);
@@ -138,6 +165,62 @@ $('refresh').onclick=()=>{loadHistory();loadTicker()};$('rsiMode').onchange=()=>
 $('sound').onclick=()=>{soundOn=!soundOn;$('sound').textContent='Son : '+(soundOn?'activé':'désactivé')};
 $('notify').onclick=async()=>{if(!('Notification'in window)){$('notifyState').textContent='Notifications non prises en charge par ce navigateur.';return}const p=await Notification.requestPermission();$('notifyState').textContent=p==='granted'?'Notifications activées.':'Autorisation refusée ou non accordée.'};
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+
+// --- AutoTrader simulation v1.4 : NDAX public market data, no order endpoints ---
+const SIM={ws:null,seq:2,inst:null,bars:[],latest:0,oms:1,req:{},ready:false};
+const simFmt=n=>Number(n).toLocaleString('fr-CA',{minimumFractionDigits:2,maximumFractionDigits:2});
+function simStatus(t,ok=false){$('simStatus').textContent=t;$('simStatus').className='tag '+(ok?'buy':'neutral')}
+function ndaxSend(name,payload){if(!SIM.ws||SIM.ws.readyState!==1)throw Error('WebSocket NDAX non connecté');const i=SIM.seq;SIM.seq+=2;SIM.ws.send(JSON.stringify({m:0,i,n,o:JSON.stringify(payload)}));return i}
+function parseNDAXPayload(o){try{return typeof o==='string'?JSON.parse(o):o}catch(e){return null}}
+function connectNDAX(){
+ if(SIM.ws)try{SIM.ws.close()}catch(e){}
+ simStatus('Connexion NDAX…');SIM.ws=new WebSocket('wss://api.ndax.io/WSGateway/');
+ SIM.ws.onopen=()=>{simStatus('Recherche BTC/CAD…');ndaxSend('GetInstruments',{OMSId:SIM.oms})};
+ SIM.ws.onmessage=ev=>{let f;try{f=JSON.parse(ev.data)}catch(e){return}const d=parseNDAXPayload(f.o);
+  if(f.m===5){$('simLog').textContent='NDAX a retourné une erreur : '+JSON.stringify(d).slice(0,240);return}
+  if(f.n==='GetInstruments'&&Array.isArray(d)){
+   SIM.inst=d.find(x=>String(x.symbol||'').toUpperCase()==='BTCCAD'||(String(x.product1Symbol||'').toUpperCase()==='BTC'&&String(x.product2Symbol||'').toUpperCase()==='CAD'));
+   if(!SIM.inst){simStatus('Paire BTC/CAD introuvable');$('simLog').textContent='La liste NDAX reçue ne contient pas de paire BTC/CAD. Aucune donnée de substitution ne sera utilisée.';return}
+   $('simLog').textContent=`Instrument BTC/CAD trouvé (ID ${SIM.inst.instrumentId}). Chargement du flux public…`;
+   ndaxSend('SubscribeTicker',{OMSId:SIM.oms,InstrumentId:SIM.inst.instrumentId,Interval:Number($('simInterval').value),IncludeLastCount:500});
+  }
+  if(f.n==='SubscribeTicker'||f.n==='TickerDataUpdateEvent'){
+   let rows=Array.isArray(d)?d:(d&&Array.isArray(d.Intervals)?d.Intervals:[]);
+   if(rows.length){rows.forEach(r=>{if(!Array.isArray(r)||r.length<9)return;const b={time:Math.floor(Number(r[0])/1000),high:+r[1],low:+r[2],open:+r[3],close:+r[4],volume:+r[5],bid:+r[6],ask:+r[7]};if(!Number.isFinite(b.close)||b.close<=0)return;let ix=SIM.bars.findIndex(x=>x.time===b.time);if(ix>=0)SIM.bars[ix]=b;else SIM.bars.push(b)});SIM.bars.sort((a,b)=>a.time-b.time);if(SIM.bars.length>1000)SIM.bars=SIM.bars.slice(-1000);}
+   const last=SIM.bars.at(-1);if(last){SIM.latest=last.close;$('ndaxPrice').textContent=simFmt(last.close)+' CAD';simStatus('NDAX · données reçues',true);$('simLog').textContent=`${SIM.bars.length} bougies reçues sur BTC/CAD. Dernière mise à jour : ${new Date(last.time*1000).toLocaleString('fr-CA')}.`}
+  }
+ };
+ SIM.ws.onerror=()=>{simStatus('Erreur de connexion');$('simLog').textContent='Impossible de joindre le flux public NDAX depuis ce navigateur. Vérifie la connexion puis actualise.'};
+ SIM.ws.onclose=()=>{if(SIM.ready){simStatus('Déconnecté');$('simLog').textContent='Flux NDAX interrompu. Actualise la page pour reconnecter.'}};
+}
+function calcEMA(a,p){let k=2/(p+1),out=[];a.forEach((v,i)=>out.push(i?v*k+out[i-1]*(1-k):v));return out}
+function calcRSI(a,p=14){let out=Array(a.length).fill(null);if(a.length<=p)return out;let g=0,l=0;for(let i=1;i<=p;i++){let d=a[i]-a[i-1];if(d>0)g+=d;else l-=d}let ag=g/p,al=l/p;out[p]=al===0?100:100-100/(1+ag/al);for(let i=p+1;i<a.length;i++){let d=a[i]-a[i-1];ag=(ag*(p-1)+Math.max(0,d))/p;al=(al*(p-1)+Math.max(0,-d))/p;out[i]=al===0?100:100-100/(1+ag/al)}return out}
+function backtest(bars,p,fee,slip){
+ const c=bars.map(x=>x.close),fast=calcEMA(c,p.fast),slow=calcEMA(c,p.slow),rsi=calcRSI(c,14);let cash=500,pos=null,trades=[],equity=[500],peak=500,maxDD=0;
+ const cost=fee/100+slip/100;
+ for(let i=Math.max(p.slow+2,20);i<bars.length-1;i++){
+  const b=bars[i],next=bars[i+1],px=next.open||next.close;
+  if(pos){let exit=null,reason='';const stop=pos.entry*(1-p.sl/100),take=pos.entry*(1+p.tp/100);if(b.low<=stop){exit=stop;reason='Stop-loss'}else if(b.high>=take){exit=take;reason='Take-profit'}else if(fast[i]<slow[i]&&rsi[i]<50){exit=px;reason='Signal de sortie'}
+   if(exit){const sell=exit*(1-cost),gross=pos.qty*sell,net=gross-pos.feeIn,profit=net-pos.invested;cash+=net;trades.push({profit,reason});pos=null}
+  } else if(fast[i]>slow[i]&&rsi[i]>=p.rsi&&c[i]>slow[i]){
+   const budget=Math.min(100,cash);if(budget>2){const qty=budget/(px*(1+cost));const spent=qty*px;const feeIn=spent*cost;const invested=spent+feeIn;if(invested<=cash){cash-=invested;pos={entry:px,qty,feeIn,invested,sl:p.sl,tp:p.tp}}}
+  }
+  const value=cash+(pos?pos.qty*b.close:0);equity.push(value);peak=Math.max(peak,value);maxDD=Math.max(maxDD,(peak-value)/peak*100);
+ }
+ if(pos){const last=bars.at(-1).close;const net=pos.qty*last*(1-cost)-pos.feeIn;trades.push({profit:net-pos.invested,reason:'Clôture fin de période'});cash+=net;pos=null;}
+ return {ret:(cash/500-1)*100,trades:trades.length,win:trades.filter(t=>t.profit>0).length,dd:maxDD,cash,profit:cash-500};
+}
+function optimizeNDAX(){
+ const bars=SIM.bars.slice();if(bars.length<80){$('bestExplain').textContent=`Seulement ${bars.length} bougies. Il en faut au moins 80; laisse le flux accumuler des données.`;return}
+ const cut=Math.floor(bars.length*.7),train=bars.slice(0,cut),test=bars.slice(cut-30);const feeRaw=Number($('simFee').value),slipRaw=Number($('simSlip').value),fee=Math.max(0,Math.min(2,Number.isFinite(feeRaw)?feeRaw:0.2)),slip=Math.max(0,Math.min(1,Number.isFinite(slipRaw)?slipRaw:0.05));
+ const combos=[];for(const fast of [5,7,9,12])for(const slow of [18,21,26,30])if(fast<slow)for(const rsi of [50,55])for(const sl of [.6,.8,1,1.2])for(const tp of [1,1.4,1.8,2.2]){const p={fast,slow,rsi,sl,tp};const a=backtest(train,p,fee,slip);if(a.trades>=2){const b=backtest(test,p,fee,slip);const score=b.ret-(b.dd*.65)+Math.min(b.trades,10)*.015;combos.push({p,a,b,score})}}
+ combos.sort((x,y)=>y.score-x.score);const top=combos.slice(0,5);if(!top.length){$('bestParams').textContent='Aucune combinaison suffisamment testée';$('bestExplain').textContent='Pas assez de transactions sur les données disponibles. Accumule plus de bougies ou élargis la période.';$('simGrade').textContent='DONNÉES INSUFFISANTES';return}
+ const best=top[0],b=best.b;$('bestParams').textContent=`EMA ${best.p.fast}/${best.p.slow} · RSI ≥ ${best.p.rsi} · SL ${best.p.sl}% · TP ${best.p.tp}%`;$('bestExplain').textContent=`Apprentissage : ${best.a.ret.toFixed(2)} % (${best.a.trades} trades). Validation séparée : ${b.ret.toFixed(2)} % net, ${b.trades} trades.`;$('simReturn').textContent=(b.ret>=0?'+':'')+b.ret.toFixed(2)+' %';$('simReturn').className=b.ret>=0?'positive':'negative';$('simTrades').textContent=b.trades;$('simDrawdown').textContent=b.dd.toFixed(2)+' %';$('simGrade').textContent=b.trades<3?'PEU DE TRADES':b.ret>0?'À SURVEILLER':'NON RENTABLE';$('simGrade').className='tag '+(b.ret>0&&b.trades>=3?'buy':'neutral');$('simResults').innerHTML=top.map((x,i)=>`<tr style="border-top:1px solid #ffffff14"><td style="padding:8px">${i+1}</td><td>EMA ${x.p.fast}/${x.p.slow}, RSI ${x.p.rsi}, SL ${x.p.sl}%, TP ${x.p.tp}%</td><td class="${x.b.ret>=0?'positive':'negative'}">${x.b.ret.toFixed(2)}%</td><td>${x.b.trades}</td><td>${x.b.dd.toFixed(2)}%</td></tr>`).join('');$('simLog').textContent=`Optimisation terminée sur ${train.length} bougies d’apprentissage et ${test.length} bougies de validation. ${combos.length} combinaisons évaluées. Les résultats restent exploratoires : historique court et pas de garantie de performance future.`;
+}
+$('runOptimizer').addEventListener('click',optimizeNDAX);
+$('simInterval').addEventListener('change',()=>{SIM.bars=[];connectNDAX()});
+SIM.ready=true;connectNDAX();
+
 initChart();loadHistory().then(connectSocket);loadTicker();setInterval(loadTicker,30000);
 </script>
 </body></html>
