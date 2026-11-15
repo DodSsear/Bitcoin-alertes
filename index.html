@@ -77,7 +77,7 @@ footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
  <div style="overflow:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);text-align:left"><th style="padding:8px">#</th><th>Paramètres</th><th>Rendement net</th><th>Trades</th><th>Drawdown</th></tr></thead><tbody id="simResults"><tr><td colspan="5" style="padding:10px;color:var(--muted)">Aucun résultat pour le moment.</td></tr></tbody></table></div>
 </section>
 
-<footer>Bitcoin Alertes v1.4.1 · Tableau de bord BTC/CAD et signaux techniques via le flux public NDAX. Simulation uniquement.</footer>
+<footer>Bitcoin Alertes v1.4.2 · Tableau de bord BTC/CAD et signaux techniques via le flux public NDAX. Simulation uniquement.</footer>
 
 
 </main>
@@ -168,17 +168,30 @@ $('sound').onclick=()=>{soundOn=!soundOn;$('sound').textContent='Son : '+(soundO
 $('notify').onclick=async()=>{if(!('Notification'in window)){$('notifyState').textContent='Notifications non prises en charge par ce navigateur.';return}const p=await Notification.requestPermission();$('notifyState').textContent=p==='granted'?'Notifications activées.':'Autorisation refusée ou non accordée.'};
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});
 
-// --- AutoTrader simulation v1.4 : NDAX public market data, no order endpoints ---
-const SIM={ws:null,seq:2,inst:null,bars:[],latest:0,oms:1,req:{},ready:false};
+// --- AutoTrader simulation v1.4.2 : NDAX public market data, diagnostics ---
+const SIM={ws:null,seq:2,inst:null,bars:[],latest:0,oms:1,req:{},ready:false,connectTimer:null};
 const simFmt=n=>Number(n).toLocaleString('fr-CA',{minimumFractionDigits:2,maximumFractionDigits:2});
 function simStatus(t,ok=false){$('simStatus').textContent=t;$('simStatus').className='tag '+(ok?'buy':'neutral')}
-function ndaxSend(name,payload){if(!SIM.ws||SIM.ws.readyState!==1)throw Error('WebSocket NDAX non connecté');const i=SIM.seq;SIM.seq+=2;SIM.ws.send(JSON.stringify({m:0,i,n,o:JSON.stringify(payload)}));return i}
-function parseNDAXPayload(o){try{return typeof o==='string'?JSON.parse(o):o}catch(e){return null}}
+function simLog(t){$('simLog').textContent=t}
+function ndaxSend(name,payload){
+ if(!SIM.ws||SIM.ws.readyState!==WebSocket.OPEN)throw Error('WebSocket NDAX non connecté');
+ const i=SIM.seq;SIM.seq+=2;SIM.req[i]=name;
+ SIM.ws.send(JSON.stringify({m:0,i,n:name,o:JSON.stringify(payload)}));
+ return i;
+}
+function parseNDAXPayload(o){if(o==null)return null;try{return typeof o==='string'?JSON.parse(o):o}catch(e){return null}}
+function findBTCAD(list){
+ if(!Array.isArray(list))return null;
+ return list.find(x=>{
+  const sym=String(x.symbol||'').toUpperCase().replace(/[^A-Z]/g,'');
+  const p1=String(x.product1Symbol||'').toUpperCase(),p2=String(x.product2Symbol||'').toUpperCase();
+  return sym==='BTCCAD'||(p1==='BTC'&&p2==='CAD');
+ })||null;
+}
 function renderMainFromNDAX(){
  const bars=SIM.bars;if(!bars.length)return;
  const last=bars[bars.length-1];$('price').textContent=simFmt(last.close)+' $ CAD';
- const now=Date.now()/1000,day=bars.filter(b=>b.time>=now-86400);
- const windowBars=day.length?day:bars;
+ const now=Date.now()/1000,day=bars.filter(b=>b.time>=now-86400),windowBars=day.length?day:bars;
  $('high').textContent=simFmt(Math.max(...windowBars.map(b=>b.high)))+' $';
  $('low').textContent=simFmt(Math.min(...windowBars.map(b=>b.low)))+' $';
  $('volume').textContent=windowBars.reduce((a,b)=>a+(b.volume||0),0).toLocaleString('fr-CA',{maximumFractionDigits:4});
@@ -189,27 +202,58 @@ function renderMainFromNDAX(){
  if(candleSeries){candleSeries.setData(candles);chart.timeScale().fitContent();updateAnalysis(false)}
  setConnection(true,'NDAX · BTC/CAD');
 }
-function subscribeNDAX(){if(!SIM.inst)return;SIM.bars=[];try{ndaxSend('SubscribeTicker',{OMSId:SIM.oms,InstrumentId:SIM.inst.instrumentId,Interval:Number($('simInterval').value),IncludeLastCount:500});}catch(e){$('simLog').textContent=e.message}}
+function consumeTickerRows(d){
+ let rows=Array.isArray(d)?d:(d&&Array.isArray(d.Intervals)?d.Intervals:(d&&Array.isArray(d.Data)?d.Data:[]));
+ if(!rows.length)return false;
+ rows.forEach(r=>{
+  if(!Array.isArray(r)||r.length<9)return;
+  const b={time:Math.floor(Number(r[0])/1000),high:+r[1],low:+r[2],open:+r[3],close:+r[4],volume:+r[5],bid:+r[6],ask:+r[7]};
+  if(!Number.isFinite(b.time)||!Number.isFinite(b.close)||b.close<=0)return;
+  const ix=SIM.bars.findIndex(x=>x.time===b.time);if(ix>=0)SIM.bars[ix]=b;else SIM.bars.push(b);
+ });
+ SIM.bars.sort((a,b)=>a.time-b.time);if(SIM.bars.length>1000)SIM.bars=SIM.bars.slice(-1000);
+ return SIM.bars.length>0;
+}
+function subscribeNDAX(){
+ if(!SIM.inst)return;
+ SIM.bars=[];
+ try{const id=ndaxSend('SubscribeTicker',{OMSId:SIM.oms,InstrumentId:SIM.inst.instrumentId,Interval:Number($('simInterval').value),IncludeLastCount:500});simLog(`Paire BTC/CAD trouvée (instrument ${SIM.inst.instrumentId}). Abonnement envoyé (requête ${id})…`)}
+ catch(e){simStatus('Échec abonnement');simLog('Impossible d’envoyer SubscribeTicker : '+e.message)}
+}
 function connectNDAX(){
- if(SIM.ws)try{SIM.ws.close()}catch(e){}
- simStatus('Connexion NDAX…');SIM.ws=new WebSocket('wss://api.ndax.io/WSGateway/');
- SIM.ws.onopen=()=>{simStatus('Recherche BTC/CAD…');ndaxSend('GetInstruments',{OMSId:SIM.oms})};
- SIM.ws.onmessage=ev=>{let f;try{f=JSON.parse(ev.data)}catch(e){return}const d=parseNDAXPayload(f.o);
-  if(f.m===5){$('simLog').textContent='NDAX a retourné une erreur : '+JSON.stringify(d).slice(0,240);return}
-  if(f.n==='GetInstruments'&&Array.isArray(d)){
-   SIM.inst=d.find(x=>String(x.symbol||'').toUpperCase()==='BTCCAD'||(String(x.product1Symbol||'').toUpperCase()==='BTC'&&String(x.product2Symbol||'').toUpperCase()==='CAD'));
-   if(!SIM.inst){simStatus('Paire BTC/CAD introuvable');$('simLog').textContent='La liste NDAX reçue ne contient pas de paire BTC/CAD. Aucune donnée de substitution ne sera utilisée.';return}
-   $('simLog').textContent=`Instrument BTC/CAD trouvé (ID ${SIM.inst.instrumentId}). Chargement du flux public…`;
-   subscribeNDAX();
+ if(SIM.connectTimer)clearTimeout(SIM.connectTimer);
+ if(SIM.ws){SIM.ws.onclose=null;try{SIM.ws.close()}catch(e){}}
+ SIM.inst=null;SIM.bars=[];SIM.req={};
+ simStatus('Ouverture du WebSocket NDAX…');setConnection(false,'Connexion NDAX…');
+ simLog('Ouverture du canal public NDAX…');
+ try{SIM.ws=new WebSocket('wss://api.ndax.io/WSGateway/')}catch(e){simStatus('WebSocket indisponible');simLog('Le navigateur ne peut pas créer la connexion WebSocket : '+e.message);return}
+ const ws=SIM.ws;
+ SIM.connectTimer=setTimeout(()=>{if(ws===SIM.ws&&ws.readyState!==WebSocket.OPEN){simStatus('Délai dépassé');simLog('Le navigateur n’a pas réussi à ouvrir le canal WebSocket NDAX. Vérifie le réseau, le VPN ou un bloqueur de contenu, puis réessaie.')}},12000);
+ ws.onopen=()=>{
+  if(ws!==SIM.ws)return;clearTimeout(SIM.connectTimer);simStatus('WebSocket ouvert · recherche BTC/CAD');simLog('Canal NDAX ouvert. Demande de la liste des instruments…');
+  try{const id=ndaxSend('GetInstruments',{OMSId:SIM.oms});simLog(`Canal ouvert. Requête GetInstruments envoyée (ID ${id}). En attente de la réponse NDAX…`)}catch(e){simStatus('Erreur de requête');simLog('Erreur GetInstruments : '+e.message)}
+ };
+ ws.onmessage=ev=>{
+  if(ws!==SIM.ws)return;
+  let f;try{f=JSON.parse(ev.data)}catch(e){simLog('Réponse NDAX reçue mais format JSON invalide.');return}
+  const d=parseNDAXPayload(f.o),requestName=SIM.req[f.i];
+  if(f.m===5){simStatus('Erreur retournée par NDAX');simLog('NDAX a refusé la requête '+(requestName||f.n||'inconnue')+' : '+JSON.stringify(d??f).slice(0,500));return}
+  // Réponse synchrone identifiée d'abord par l'ID de requête, puis par le nom.
+  if((requestName==='GetInstruments'||f.n==='GetInstruments')&&(f.m===1||Array.isArray(d))){
+   delete SIM.req[f.i];const list=Array.isArray(d)?d:(d&&Array.isArray(d.Instruments)?d.Instruments:[]);
+   SIM.inst=findBTCAD(list);
+   if(!SIM.inst){simStatus('BTC/CAD introuvable');simLog(`NDAX a répondu à GetInstruments, mais aucune paire BTC/CAD n’a été reconnue. Instruments reçus : ${list.length}. Réponse : ${JSON.stringify(d).slice(0,350)}`);return}
+   simLog(`Paire BTC/CAD identifiée (instrument ${SIM.inst.instrumentId}). Préparation de l’abonnement…`);subscribeNDAX();return;
   }
-  if(f.n==='SubscribeTicker'||f.n==='TickerDataUpdateEvent'){
-   let rows=Array.isArray(d)?d:(d&&Array.isArray(d.Intervals)?d.Intervals:[]);
-   if(rows.length){rows.forEach(r=>{if(!Array.isArray(r)||r.length<9)return;const b={time:Math.floor(Number(r[0])/1000),high:+r[1],low:+r[2],open:+r[3],close:+r[4],volume:+r[5],bid:+r[6],ask:+r[7]};if(!Number.isFinite(b.close)||b.close<=0)return;let ix=SIM.bars.findIndex(x=>x.time===b.time);if(ix>=0)SIM.bars[ix]=b;else SIM.bars.push(b)});SIM.bars.sort((a,b)=>a.time-b.time);if(SIM.bars.length>1000)SIM.bars=SIM.bars.slice(-1000);}
-   const last=SIM.bars.at(-1);if(last){SIM.latest=last.close;$('ndaxPrice').textContent=simFmt(last.close)+' CAD';renderMainFromNDAX();simStatus('NDAX · données reçues',true);$('simLog').textContent=`${SIM.bars.length} bougies reçues sur BTC/CAD. Dernière mise à jour : ${new Date(last.time*1000).toLocaleString('fr-CA')}.`}
+  const isTickerReply=requestName==='SubscribeTicker'||f.n==='SubscribeTicker';
+  const isTickerEvent=f.n==='TickerDataUpdateEvent'||f.m===3;
+  if(isTickerReply||isTickerEvent){
+   if(consumeTickerRows(d)){const last=SIM.bars[SIM.bars.length-1];SIM.latest=last.close;renderMainFromNDAX();simStatus('NDAX · données reçues',true);simLog(`${SIM.bars.length} bougies reçues sur BTC/CAD. Dernière bougie : ${new Date(last.time*1000).toLocaleString('fr-CA')}.`)}
+   else if(isTickerReply){simStatus('Abonné · attente des bougies');simLog('NDAX a accepté SubscribeTicker, mais aucune bougie exploitable n’est encore arrivée.')}
   }
  };
- SIM.ws.onerror=()=>{simStatus('Erreur de connexion');$('simLog').textContent='Impossible de joindre le flux public NDAX depuis ce navigateur. Vérifie la connexion puis actualise.'};
- SIM.ws.onclose=()=>{if(SIM.ready){simStatus('Déconnecté');$('simLog').textContent='Flux NDAX interrompu. Actualise la page pour reconnecter.'}};
+ ws.onerror=()=>{if(ws!==SIM.ws)return;simStatus('Erreur WebSocket');simLog('Le navigateur signale une erreur WebSocket vers NDAX. Si le canal ne s’ouvre pas, essaie un autre réseau ou désactive temporairement VPN/bloqueur de contenu.')};
+ ws.onclose=ev=>{if(ws!==SIM.ws)return;simStatus('Déconnecté');simLog(`Connexion NDAX fermée (code ${ev.code}${ev.reason?`, raison : ${ev.reason}`:''}). Appuie sur Actualiser pour réessayer.`);setConnection(false,'NDAX déconnecté')};
 }
 function calcEMA(a,p){let k=2/(p+1),out=[];a.forEach((v,i)=>out.push(i?v*k+out[i-1]*(1-k):v));return out}
 function calcRSI(a,p=14){let out=Array(a.length).fill(null);if(a.length<=p)return out;let g=0,l=0;for(let i=1;i<=p;i++){let d=a[i]-a[i-1];if(d>0)g+=d;else l-=d}let ag=g/p,al=l/p;out[p]=al===0?100:100-100/(1+ag/al);for(let i=p+1;i<a.length;i++){let d=a[i]-a[i-1];ag=(ag*(p-1)+Math.max(0,d))/p;al=(al*(p-1)+Math.max(0,-d))/p;out[i]=al===0?100:100-100/(1+ag/al)}return out}
