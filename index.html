@@ -77,7 +77,7 @@ footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
  <div style="overflow:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);text-align:left"><th style="padding:8px">#</th><th>Paramètres</th><th>Rendement net</th><th>Trades</th><th>Drawdown</th></tr></thead><tbody id="simResults"><tr><td colspan="5" style="padding:10px;color:var(--muted)">Aucun résultat pour le moment.</td></tr></tbody></table></div>
 </section>
 
-<footer>Bitcoin Alertes v1.4.2 · Tableau de bord BTC/CAD et signaux techniques via le flux public NDAX. Simulation uniquement.</footer>
+<footer>Bitcoin Alertes v1.4.3 · Tableau de bord BTC/CAD et signaux techniques via le flux public NDAX. Simulation uniquement.</footer>
 
 
 </main>
@@ -168,7 +168,7 @@ $('sound').onclick=()=>{soundOn=!soundOn;$('sound').textContent='Son : '+(soundO
 $('notify').onclick=async()=>{if(!('Notification'in window)){$('notifyState').textContent='Notifications non prises en charge par ce navigateur.';return}const p=await Notification.requestPermission();$('notifyState').textContent=p==='granted'?'Notifications activées.':'Autorisation refusée ou non accordée.'};
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});
 
-// --- AutoTrader simulation v1.4.2 : NDAX public market data, diagnostics ---
+// --- AutoTrader simulation v1.4.3 : NDAX public market data, diagnostics ---
 const SIM={ws:null,seq:2,inst:null,bars:[],latest:0,oms:1,req:{},ready:false,connectTimer:null};
 const simFmt=n=>Number(n).toLocaleString('fr-CA',{minimumFractionDigits:2,maximumFractionDigits:2});
 function simStatus(t,ok=false){$('simStatus').textContent=t;$('simStatus').className='tag '+(ok?'buy':'neutral')}
@@ -180,13 +180,34 @@ function ndaxSend(name,payload){
  return i;
 }
 function parseNDAXPayload(o){if(o==null)return null;try{return typeof o==='string'?JSON.parse(o):o}catch(e){return null}}
+function ndaxField(obj,name){
+ if(!obj||typeof obj!=='object')return undefined;
+ if(Object.prototype.hasOwnProperty.call(obj,name))return obj[name];
+ const key=Object.keys(obj).find(k=>k.toLowerCase()===name.toLowerCase());
+ return key===undefined?undefined:obj[key];
+}
 function findBTCAD(list){
  if(!Array.isArray(list))return null;
- return list.find(x=>{
-  const sym=String(x.symbol||'').toUpperCase().replace(/[^A-Z]/g,'');
-  const p1=String(x.product1Symbol||'').toUpperCase(),p2=String(x.product2Symbol||'').toUpperCase();
+ const found=list.find(x=>{
+  const sym=String(ndaxField(x,'symbol')||'').toUpperCase().replace(/[^A-Z]/g,'');
+  const p1=String(ndaxField(x,'product1Symbol')||'').toUpperCase();
+  const p2=String(ndaxField(x,'product2Symbol')||'').toUpperCase();
   return sym==='BTCCAD'||(p1==='BTC'&&p2==='CAD');
- })||null;
+ });
+ if(!found)return null;
+ // NDAX peut renvoyer les propriétés en PascalCase (Symbol, InstrumentId, OMSId)
+ // ou en camelCase. Normaliser ici pour le reste de l'application.
+ return {
+  instrumentId:Number(ndaxField(found,'instrumentId')),
+  omsId:Number(ndaxField(found,'omsId')??SIM.oms),
+  symbol:String(ndaxField(found,'symbol')||'BTCCAD'),
+  product1Symbol:String(ndaxField(found,'product1Symbol')||'BTC'),
+  product2Symbol:String(ndaxField(found,'product2Symbol')||'CAD'),
+  quantityIncrement:Number(ndaxField(found,'quantityIncrement')||0),
+  priceIncrement:Number(ndaxField(found,'priceIncrement')||0),
+  sessionStatus:ndaxField(found,'sessionStatus'),
+  raw:found
+ };
 }
 function renderMainFromNDAX(){
  const bars=SIM.bars;if(!bars.length)return;
@@ -242,8 +263,8 @@ function connectNDAX(){
   if((requestName==='GetInstruments'||f.n==='GetInstruments')&&(f.m===1||Array.isArray(d))){
    delete SIM.req[f.i];const list=Array.isArray(d)?d:(d&&Array.isArray(d.Instruments)?d.Instruments:[]);
    SIM.inst=findBTCAD(list);
-   if(!SIM.inst){simStatus('BTC/CAD introuvable');simLog(`NDAX a répondu à GetInstruments, mais aucune paire BTC/CAD n’a été reconnue. Instruments reçus : ${list.length}. Réponse : ${JSON.stringify(d).slice(0,350)}`);return}
-   simLog(`Paire BTC/CAD identifiée (instrument ${SIM.inst.instrumentId}). Préparation de l’abonnement…`);subscribeNDAX();return;
+   if(!SIM.inst||!Number.isFinite(SIM.inst.instrumentId)){simStatus('BTC/CAD introuvable');simLog(`NDAX a répondu à GetInstruments, mais aucune paire BTC/CAD exploitable n’a été reconnue. Instruments reçus : ${list.length}. Réponse : ${JSON.stringify(d).slice(0,500)}`);return}
+   simLog(`Paire ${SIM.inst.symbol} identifiée : instrument ${SIM.inst.instrumentId}, OMS ${SIM.inst.omsId}, statut ${SIM.inst.sessionStatus??'inconnu'}. Préparation de l’abonnement…`);subscribeNDAX();return;
   }
   const isTickerReply=requestName==='SubscribeTicker'||f.n==='SubscribeTicker';
   const isTickerEvent=f.n==='TickerDataUpdateEvent'||f.m===3;
