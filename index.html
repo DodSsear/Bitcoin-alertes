@@ -35,8 +35,8 @@ footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
 <section class="top">
  <div class="panel"><div class="eyebrow">Bitcoin en dollars canadiens · BTC/CAD</div><div class="price" id="price">—</div><div id="daily" class="change muted">Variation 24 h : —</div><div class="note">Prix du marché au comptant fourni par le flux public NDAX.</div></div>
  <div class="panel"><div class="eyebrow">Résumé du marché</div><div class="metrics" style="margin-top:13px">
-  <div class="metric"><span class="eyebrow">Plus haut 24 h</span><b id="high">—</b></div>
-  <div class="metric"><span class="eyebrow">Plus bas 24 h</span><b id="low">—</b></div>
+  <div class="metric"><span class="eyebrow">Plus haut 24 h (CAD)</span><b id="high">—</b></div>
+  <div class="metric"><span class="eyebrow">Plus bas 24 h (CAD)</span><b id="low">—</b></div>
   <div class="metric"><span class="eyebrow">Volume BTC</span><b id="volume">—</b></div>
  </div></div>
 </section>
@@ -77,7 +77,7 @@ footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
  <div style="overflow:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);text-align:left"><th style="padding:8px">#</th><th>Paramètres</th><th>Rendement net</th><th>Trades</th><th>Drawdown</th></tr></thead><tbody id="simResults"><tr><td colspan="5" style="padding:10px;color:var(--muted)">Aucun résultat pour le moment.</td></tr></tbody></table></div>
 </section>
 
-<footer>Bitcoin Alertes v1.4 · Données BTC/CAD et signaux techniques via le flux public NDAX. Simulation uniquement.</footer>
+<footer>Bitcoin Alertes v1.4.1 · Tableau de bord BTC/CAD et signaux techniques via le flux public NDAX. Simulation uniquement.</footer>
 
 
 </main>
@@ -166,7 +166,7 @@ $('refresh').onclick=()=>{SIM.bars=[];connectNDAX()};
 $('rsiMode').onchange=()=>updateAnalysis(false);
 $('sound').onclick=()=>{soundOn=!soundOn;$('sound').textContent='Son : '+(soundOn?'activé':'désactivé')};
 $('notify').onclick=async()=>{if(!('Notification'in window)){$('notifyState').textContent='Notifications non prises en charge par ce navigateur.';return}const p=await Notification.requestPermission();$('notifyState').textContent=p==='granted'?'Notifications activées.':'Autorisation refusée ou non accordée.'};
-if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});
 
 // --- AutoTrader simulation v1.4 : NDAX public market data, no order endpoints ---
 const SIM={ws:null,seq:2,inst:null,bars:[],latest:0,oms:1,req:{},ready:false};
@@ -237,8 +237,7 @@ function optimizeNDAX(){
 }
 $('runOptimizer').addEventListener('click',optimizeNDAX);
 $('simInterval').addEventListener('change',()=>{const v=String($('simInterval').value),label=({'60':'1m','300':'5m','900':'15m','3600':'1h'})[v]||'1m';interval=label;document.querySelectorAll('#intervals button').forEach(b=>b.classList.toggle('active',b.dataset.interval===label));SIM.bars=[];connectNDAX()});
-SIM.ready=true;connectNDAX();
-
 initChart();setConnection(false,'Connexion NDAX…');
+SIM.ready=true;connectNDAX();
 </script>
 </body></html>
