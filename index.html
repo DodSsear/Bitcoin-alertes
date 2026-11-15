@@ -68,7 +68,7 @@ footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
  </div>
  <div class="note">Les frais initiaux sont une hypothèse modifiable de 0,20 % par côté, et le glissement de 0,05 % est une hypothèse de simulation, pas une cotation NDAX. L’optimiseur utilise une séparation chronologique 70 % apprentissage / 30 % validation.</div>
  <div class="metrics" style="margin-top:14px">
-  <div class="metric"><span class="eyebrow">Rendement net validation</span><b id="simReturn">—</b></div>
+  <div class="metric"><span class="eyebrow">Rendement net test final</span><b id="simReturn">—</b></div>
   <div class="metric"><span class="eyebrow">Transactions validation</span><b id="simTrades">—</b></div>
   <div class="metric"><span class="eyebrow">Perte max. (drawdown)</span><b id="simDrawdown">—</b></div>
  </div>
@@ -77,7 +77,7 @@ footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
  <div style="overflow:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);text-align:left"><th style="padding:8px">#</th><th>Paramètres</th><th>Rendement net</th><th>Trades</th><th>Drawdown</th></tr></thead><tbody id="simResults"><tr><td colspan="5" style="padding:10px;color:var(--muted)">Aucun résultat pour le moment.</td></tr></tbody></table></div>
 </section>
 
-<footer>Bitcoin Alertes v1.4.3 · Tableau de bord BTC/CAD et signaux techniques via le flux public NDAX. Simulation uniquement.</footer>
+<footer>Bitcoin Alertes v1.4.4 · Tableau de bord BTC/CAD et signaux techniques via le flux public NDAX. Simulation uniquement.</footer>
 
 
 </main>
@@ -168,7 +168,7 @@ $('sound').onclick=()=>{soundOn=!soundOn;$('sound').textContent='Son : '+(soundO
 $('notify').onclick=async()=>{if(!('Notification'in window)){$('notifyState').textContent='Notifications non prises en charge par ce navigateur.';return}const p=await Notification.requestPermission();$('notifyState').textContent=p==='granted'?'Notifications activées.':'Autorisation refusée ou non accordée.'};
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});
 
-// --- AutoTrader simulation v1.4.3 : NDAX public market data, diagnostics ---
+// --- AutoTrader simulation v1.4.4 : NDAX public market data, diagnostics ---
 const SIM={ws:null,seq:2,inst:null,bars:[],latest:0,oms:1,req:{},ready:false,connectTimer:null};
 const simFmt=n=>Number(n).toLocaleString('fr-CA',{minimumFractionDigits:2,maximumFractionDigits:2});
 function simStatus(t,ok=false){$('simStatus').textContent=t;$('simStatus').className='tag '+(ok?'buy':'neutral')}
@@ -278,10 +278,10 @@ function connectNDAX(){
 }
 function calcEMA(a,p){let k=2/(p+1),out=[];a.forEach((v,i)=>out.push(i?v*k+out[i-1]*(1-k):v));return out}
 function calcRSI(a,p=14){let out=Array(a.length).fill(null);if(a.length<=p)return out;let g=0,l=0;for(let i=1;i<=p;i++){let d=a[i]-a[i-1];if(d>0)g+=d;else l-=d}let ag=g/p,al=l/p;out[p]=al===0?100:100-100/(1+ag/al);for(let i=p+1;i<a.length;i++){let d=a[i]-a[i-1];ag=(ag*(p-1)+Math.max(0,d))/p;al=(al*(p-1)+Math.max(0,-d))/p;out[i]=al===0?100:100-100/(1+ag/al)}return out}
-function backtest(bars,p,fee,slip){
+function backtest(bars,p,fee,slip,evaluateFrom=0){
  const c=bars.map(x=>x.close),fast=calcEMA(c,p.fast),slow=calcEMA(c,p.slow),rsi=calcRSI(c,14);let cash=500,pos=null,trades=[],equity=[500],peak=500,maxDD=0;
  const cost=fee/100+slip/100;
- for(let i=Math.max(p.slow+2,20);i<bars.length-1;i++){
+ for(let i=Math.max(p.slow+2,20,evaluateFrom);i<bars.length-1;i++){
   const b=bars[i],next=bars[i+1],px=next.open||next.close;
   if(pos){let exit=null,reason='';const stop=pos.entry*(1-p.sl/100),take=pos.entry*(1+p.tp/100);if(b.low<=stop){exit=stop;reason='Stop-loss'}else if(b.high>=take){exit=take;reason='Take-profit'}else if(fast[i]<slow[i]&&rsi[i]<50){exit=px;reason='Signal de sortie'}
    if(exit){const sell=exit*(1-cost),gross=pos.qty*sell,net=gross-pos.feeIn,profit=net-pos.invested;cash+=net;trades.push({profit,reason});pos=null}
@@ -294,11 +294,36 @@ function backtest(bars,p,fee,slip){
  return {ret:(cash/500-1)*100,trades:trades.length,win:trades.filter(t=>t.profit>0).length,dd:maxDD,cash,profit:cash-500};
 }
 function optimizeNDAX(){
- const bars=SIM.bars.slice();if(bars.length<80){$('bestExplain').textContent=`Seulement ${bars.length} bougies. Il en faut au moins 80; laisse le flux accumuler des données.`;return}
- const cut=Math.floor(bars.length*.7),train=bars.slice(0,cut),test=bars.slice(cut-30);const feeRaw=Number($('simFee').value),slipRaw=Number($('simSlip').value),fee=Math.max(0,Math.min(2,Number.isFinite(feeRaw)?feeRaw:0.2)),slip=Math.max(0,Math.min(1,Number.isFinite(slipRaw)?slipRaw:0.05));
- const combos=[];for(const fast of [5,7,9,12])for(const slow of [18,21,26,30])if(fast<slow)for(const rsi of [50,55])for(const sl of [.6,.8,1,1.2])for(const tp of [1,1.4,1.8,2.2]){const p={fast,slow,rsi,sl,tp};const a=backtest(train,p,fee,slip);if(a.trades>=2){const b=backtest(test,p,fee,slip);const score=b.ret-(b.dd*.65)+Math.min(b.trades,10)*.015;combos.push({p,a,b,score})}}
- combos.sort((x,y)=>y.score-x.score);const top=combos.slice(0,5);if(!top.length){$('bestParams').textContent='Aucune combinaison suffisamment testée';$('bestExplain').textContent='Pas assez de transactions sur les données disponibles. Accumule plus de bougies ou élargis la période.';$('simGrade').textContent='DONNÉES INSUFFISANTES';return}
- const best=top[0],b=best.b;$('bestParams').textContent=`EMA ${best.p.fast}/${best.p.slow} · RSI ≥ ${best.p.rsi} · SL ${best.p.sl}% · TP ${best.p.tp}%`;$('bestExplain').textContent=`Apprentissage : ${best.a.ret.toFixed(2)} % (${best.a.trades} trades). Validation séparée : ${b.ret.toFixed(2)} % net, ${b.trades} trades.`;$('simReturn').textContent=(b.ret>=0?'+':'')+b.ret.toFixed(2)+' %';$('simReturn').className=b.ret>=0?'positive':'negative';$('simTrades').textContent=b.trades;$('simDrawdown').textContent=b.dd.toFixed(2)+' %';$('simGrade').textContent=b.trades<3?'PEU DE TRADES':b.ret>0?'À SURVEILLER':'NON RENTABLE';$('simGrade').className='tag '+(b.ret>0&&b.trades>=3?'buy':'neutral');$('simResults').innerHTML=top.map((x,i)=>`<tr style="border-top:1px solid #ffffff14"><td style="padding:8px">${i+1}</td><td>EMA ${x.p.fast}/${x.p.slow}, RSI ${x.p.rsi}, SL ${x.p.sl}%, TP ${x.p.tp}%</td><td class="${x.b.ret>=0?'positive':'negative'}">${x.b.ret.toFixed(2)}%</td><td>${x.b.trades}</td><td>${x.b.dd.toFixed(2)}%</td></tr>`).join('');$('simLog').textContent=`Optimisation terminée sur ${train.length} bougies d’apprentissage et ${test.length} bougies de validation. ${combos.length} combinaisons évaluées. Les résultats restent exploratoires : historique court et pas de garantie de performance future.`;
+ const bars=SIM.bars.slice();
+ if(bars.length<150){$('bestExplain').textContent=`Seulement ${bars.length} bougies. Il en faut au moins 150 pour séparer apprentissage, validation et test final.`;$('simGrade').textContent='DONNÉES INSUFFISANTES';return}
+ // Séparation chronologique stricte : 60 % apprentissage, 20 % validation, 20 % test final.
+ // Le test final ne participe jamais au classement des stratégies.
+ const trainEnd=Math.floor(bars.length*.6),validEnd=Math.floor(bars.length*.8);
+ const feeRaw=Number($('simFee').value),slipRaw=Number($('simSlip').value),fee=Math.max(0,Math.min(2,Number.isFinite(feeRaw)?feeRaw:0.2)),slip=Math.max(0,Math.min(1,Number.isFinite(slipRaw)?slipRaw:0.05));
+ const trainBars=bars.slice(0,trainEnd),validationBars=bars.slice(0,validEnd);
+ const combos=[];
+ for(const fast of [5,7,9,12])for(const slow of [18,21,26,30])if(fast<slow)
+ for(const rsi of [50,55])for(const sl of [.6,.8,1,1.2])for(const tp of [1,1.4,1.8,2.2]){
+  const p={fast,slow,rsi,sl,tp};
+  const a=backtest(trainBars,p,fee,slip);
+  if(a.trades>=2){
+   const v=backtest(validationBars,p,fee,slip,trainEnd);
+   if(v.trades>=1){const score=v.ret-(v.dd*.65)+Math.min(v.trades,10)*.015;combos.push({p,a,v,score})}
+  }
+ }
+ combos.sort((x,y)=>y.score-x.score);
+ const top=combos.slice(0,5);
+ if(!top.length){$('bestParams').textContent='Aucune combinaison suffisamment testée';$('bestExplain').textContent='Pas assez de transactions sur les périodes d’apprentissage et de validation. Accumule plus de bougies ou élargis la période.';$('simGrade').textContent='DONNÉES INSUFFISANTES';$('simResults').innerHTML='<tr><td colspan="5" style="padding:10px;color:var(--muted)">Aucun résultat fiable.</td></tr>';return}
+ const best=top[0];
+ // Le test hors échantillon n'est calculé qu'après le choix de la meilleure stratégie sur validation.
+ const finalTest=backtest(bars,best.p,fee,slip,validEnd);
+ $('bestParams').textContent=`EMA ${best.p.fast}/${best.p.slow} · RSI ≥ ${best.p.rsi} · SL ${best.p.sl}% · TP ${best.p.tp}%`;
+ $('bestExplain').textContent=`Apprentissage (${trainBars.length} bougies) : ${best.a.ret.toFixed(2)} % / ${best.a.trades} trades. Validation (${validEnd-trainEnd}) : ${best.v.ret.toFixed(2)} % / ${best.v.trades} trades. Test final indépendant (${bars.length-validEnd}) : ${finalTest.ret.toFixed(2)} % net / ${finalTest.trades} trades.`;
+ $('simReturn').textContent=(finalTest.ret>=0?'+':'')+finalTest.ret.toFixed(2)+' %';$('simReturn').className=finalTest.ret>=0?'positive':'negative';
+ $('simTrades').textContent=finalTest.trades;$('simDrawdown').textContent=finalTest.dd.toFixed(2)+' %';
+ $('simGrade').textContent=finalTest.trades<3?'PEU DE TRADES':finalTest.ret>0?'TEST POSITIF · À SURVEILLER':'TEST NÉGATIF';$('simGrade').className='tag '+(finalTest.ret>0&&finalTest.trades>=3?'buy':'neutral');
+ $('simResults').innerHTML=top.map((x,i)=>`<tr style="border-top:1px solid #ffffff14"><td style="padding:8px">${i+1}</td><td>EMA ${x.p.fast}/${x.p.slow}, RSI ${x.p.rsi}, SL ${x.p.sl}%, TP ${x.p.tp}%</td><td class="${x.v.ret>=0?'positive':'negative'}">${x.v.ret.toFixed(2)}%</td><td>${x.v.trades}</td><td>${x.v.dd.toFixed(2)}%</td></tr>`).join('');
+ $('simLog').textContent=`Optimisation terminée : ${trainEnd} bougies d’apprentissage, ${validEnd-trainEnd} de validation et ${bars.length-validEnd} de test final indépendant. ${combos.length} combinaisons classées uniquement sur la validation. Le test final n'a pas servi à choisir la stratégie. Frais : ${fee.toFixed(2)} % et glissement : ${slip.toFixed(2)} % par côté. Résultats historiques exploratoires, sans garantie de performance future.`;
 }
 $('runOptimizer').addEventListener('click',optimizeNDAX);
 $('simInterval').addEventListener('change',()=>{const v=String($('simInterval').value),label=({'60':'1m','300':'5m','900':'15m','3600':'1h'})[v]||'1m';interval=label;document.querySelectorAll('#intervals button').forEach(b=>b.classList.toggle('active',b.dataset.interval===label));SIM.bars=[];connectNDAX()});
