@@ -69,16 +69,17 @@ footer{text-align:center;color:#728098;font-size:12px;padding:24px 10px}
  <div class="note">Hypothèses modifiables : frais 0,20 % et glissement 0,05 % par côté. Risque simulé : maximum 100 CAD frais compris par position, une position à la fois, arrêt des nouvelles entrées à −5 % sur la journée, maximum 3 pertes consécutives par jour et pause de 3 bougies après un stop-loss. Ces garde-fous ne garantissent pas une perte maximale réelle.</div>
  <div class="metrics" style="margin-top:14px">
   <div class="metric"><span class="eyebrow">Rendement net test final</span><b id="simReturn">—</b></div>
-  <div class="metric"><span class="eyebrow">Transactions validation</span><b id="simTrades">—</b></div>
+  <div class="metric"><span class="eyebrow">Transactions test final</span><b id="simTrades">—</b></div>
   <div class="metric"><span class="eyebrow">Perte max. (drawdown)</span><b id="simDrawdown">—</b></div>
  </div>
  <div class="metrics" style="margin-top:12px"><div class="metric"><span class="eyebrow">Taux de réussite final</span><b id="simWinRate">—</b></div><div class="metric"><span class="eyebrow">Facteur de profit final</span><b id="simProfitFactor">—</b></div><div class="metric"><span class="eyebrow">Capital final simulé</span><b id="simFinalCash">—</b></div></div>
  <div class="signal" style="margin-top:12px"><div><div class="eyebrow">Meilleure combinaison validée</div><strong id="bestParams">En attente des données NDAX</strong><div class="muted" id="bestExplain" style="font-size:12px;margin-top:5px">Il faut au moins 150 bougies utilisables et assez de transactions par période.</div></div><span class="tag neutral" id="simGrade">NON TESTÉ</span></div>
  <div class="note" id="simLog">Le flux public NDAX est en cours d’initialisation.</div>
  <div style="overflow:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);text-align:left"><th style="padding:8px">#</th><th>Paramètres</th><th>Rendement net</th><th>Trades</th><th>Drawdown</th></tr></thead><tbody id="simResults"><tr><td colspan="5" style="padding:10px;color:var(--muted)">Aucun résultat pour le moment.</td></tr></tbody></table></div>
+ <div class="panel" style="margin-top:14px;border:1px solid #3b5d83"><div class="eyebrow">Paper Trading · simulation prospective</div><h3 style="margin:6px 0">Suivi à partir des prochaines bougies clôturées</h3><div class="note" id="paperStatus">Inactif. Lance d’abord l’optimisation et vérifie qu’une stratégie a au moins 5 trades en validation avec un rendement positif. Aucun ordre réel ne sera envoyé.</div><div class="metrics" style="margin-top:12px"><div class="metric"><span class="eyebrow">Capital virtuel</span><b id="paperCash">500,00 CAD</b></div><div class="metric"><span class="eyebrow">Trades simulés</span><b id="paperTrades">0</b></div><div class="metric"><span class="eyebrow">P&L net</span><b id="paperPnl">0,00 CAD</b></div></div><div class="settings" style="margin-top:12px"><button class="primary" id="paperStart">Démarrer Paper Trading</button><button id="paperStop">Arrêter</button><button id="paperReset">Réinitialiser</button></div><div class="note">Simulation locale à cette session : 100 CAD maximum frais compris par position, une seule position à la fois. Les résultats sont indicatifs et ne reproduisent pas exactement l’exécution réelle, la liquidité ou le carnet d’ordres NDAX.</div></div>
 </section>
 
-<footer>Bitcoin Alertes v1.5 · Optimisation robuste et gestion du risque BTC/CAD via le flux public NDAX. Simulation uniquement.</footer>
+<footer>Bitcoin Alertes v1.5.1 · Paper Trading prospectif et optimisation robuste et gestion du risque BTC/CAD via le flux public NDAX. Simulation uniquement.</footer>
 
 
 </main>
@@ -171,6 +172,7 @@ if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.s
 
 // --- AutoTrader simulation v1.4.4 : NDAX public market data, diagnostics ---
 const SIM={ws:null,seq:2,inst:null,bars:[],latest:0,oms:1,req:{},ready:false,connectTimer:null};
+const PAPER={active:false,cash:500,initial:500,trades:0,position:null,lastBarTime:null,params:null,fee:.20,slip:.05,peak:500,maxDD:0};
 const simFmt=n=>Number(n).toLocaleString('fr-CA',{minimumFractionDigits:2,maximumFractionDigits:2});
 function simStatus(t,ok=false){$('simStatus').textContent=t;$('simStatus').className='tag '+(ok?'buy':'neutral')}
 function simLog(t){$('simLog').textContent=t}
@@ -222,6 +224,7 @@ function renderMainFromNDAX(){
  $('ndaxPrice').textContent=simFmt(last.close)+' CAD';
  candles=bars.slice(-500).map((b,i,a)=>({time:b.time,open:b.open,high:b.high,low:b.low,close:b.close,closed:i<a.length-1}));
  if(candleSeries){candleSeries.setData(candles);chart.timeScale().fitContent();updateAnalysis(false)}
+ paperProcessClosedBars();
  setConnection(true,'NDAX · BTC/CAD');
 }
 function consumeTickerRows(d){
@@ -309,6 +312,26 @@ function backtest(bars,p,fee,slip,evaluateFrom=0){
  const wins=trades.filter(t=>t.profit>0),losses=trades.filter(t=>t.profit<0),grossWin=wins.reduce((a,t)=>a+t.profit,0),grossLoss=Math.abs(losses.reduce((a,t)=>a+t.profit,0));
  return {ret:(cash/500-1)*100,trades:trades.length,win:wins.length,winRate:trades.length?wins.length/trades.length*100:0,profitFactor:grossLoss?grossWin/grossLoss:(grossWin>0?Infinity:0),avgTrade:trades.length?trades.reduce((a,t)=>a+t.profit,0)/trades.length:0,dd:maxDD,cash,profit:cash-500};
 }
+function paperUi(){
+ $('paperCash').textContent=PAPER.cash.toFixed(2)+' CAD';$('paperTrades').textContent=String(PAPER.trades);
+ const pnl=PAPER.cash-PAPER.initial;$('paperPnl').textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+' CAD';$('paperPnl').className=pnl>=0?'positive':'negative';
+ $('paperStatus').textContent=PAPER.active?'ACTIF · simulation uniquement. Dernière bougie traitée : '+(PAPER.lastBarTime?new Date(PAPER.lastBarTime*1000).toLocaleString('fr-CA'):'en attente')+'.':(PAPER.params?'En pause. Stratégie sélectionnée EMA '+PAPER.params.fast+'/'+PAPER.params.slow+', RSI ≥ '+PAPER.params.rsi+'.':'Inactif. Lance d’abord l’optimisation et vérifie qu’une stratégie admissible existe.');
+}
+function paperReset(){PAPER.active=false;PAPER.cash=500;PAPER.trades=0;PAPER.position=null;PAPER.lastBarTime=null;PAPER.params=null;PAPER.peak=500;PAPER.maxDD=0;paperUi()}
+function paperProcessClosedBars(){
+ if(!PAPER.active||!PAPER.params||SIM.bars.length<55)return;
+ const bars=SIM.bars,idx=bars.length-2,b=bars[idx];if(!b||b.time===PAPER.lastBarTime)return;PAPER.lastBarTime=b.time;
+ const p=PAPER.params,closes=bars.slice(0,idx+1).map(x=>x.close),fast=calcEMA(closes,p.fast),slow=calcEMA(closes,p.slow),r=calcRSI(closes,14),trend=calcEMA(closes,50),i=closes.length-1;
+ const cost=(PAPER.fee+PAPER.slip)/100;
+ if(PAPER.position){const pos=PAPER.position;let exit=null;if(b.low<=pos.entry*(1-p.sl/100))exit=pos.entry*(1-p.sl/100);else if(b.high>=pos.entry*(1+p.tp/100))exit=pos.entry*(1+p.tp/100);else if(fast[i]<slow[i]&&r[i]<50)exit=b.close;
+  if(exit!==null){const net=pos.qty*exit*(1-cost)-pos.feeIn;PAPER.cash+=net;PAPER.trades++;PAPER.position=null;}
+ }else if(PAPER.cash>2&&fast[i]>slow[i]&&r[i]>=p.rsi&&closes[i]>slow[i]&&(!p.trendFilter||(closes[i]>trend[i]&&trend[i]>=trend[i-1]))){
+  const budget=Math.min(100,PAPER.cash/(1+cost));const qty=budget/(b.close*(1+cost)),spent=qty*b.close,feeIn=spent*cost,total=spent+feeIn;if(total<=100.000001&&total<=PAPER.cash){PAPER.cash-=total;PAPER.position={entry:b.close,qty,feeIn};}
+ }
+ const equity=PAPER.cash+(PAPER.position?PAPER.position.qty*b.close:0);PAPER.peak=Math.max(PAPER.peak,equity);PAPER.maxDD=Math.max(PAPER.maxDD,(PAPER.peak-equity)/PAPER.peak*100);paperUi();
+}
+$('paperStart').addEventListener('click',()=>{if(!PAPER.params){$('paperStatus').textContent='Démarrage refusé : aucune stratégie admissible. Lance l’optimisation.';return}if(SIM.bars.length<55){$('paperStatus').textContent='Démarrage refusé : historique insuffisant.';return}PAPER.active=true;PAPER.lastBarTime=SIM.bars.length>1?SIM.bars[SIM.bars.length-2].time:null;paperUi()});
+$('paperStop').addEventListener('click',()=>{PAPER.active=false;paperUi()});$('paperReset').addEventListener('click',paperReset);
 function optimizeNDAX(){
  const bars=SIM.bars.slice();
  if(bars.length<150){$('bestExplain').textContent=`Seulement ${bars.length} bougies. Il en faut au moins 150 pour séparer apprentissage, validation et test final.`;$('simGrade').textContent='DONNÉES INSUFFISANTES';return}
@@ -326,15 +349,16 @@ function optimizeNDAX(){
   }
  }
  combos.sort((x,y)=>y.score-x.score);const top=combos.slice(0,5);
- if(!top.length){$('bestParams').textContent='Aucune stratégie admissible';$('bestExplain').textContent=`${bars.length} bougies analysées, mais aucune combinaison n'a atteint au moins 5 transactions en apprentissage ET 5 en validation. Il faut accumuler plus d'historique; le seuil n'est pas abaissé artificiellement.`;$('simGrade').textContent='ÉCHANTILLON INSUFFISANT';$('simGrade').className='tag neutral';$('simReturn').textContent='—';$('simTrades').textContent='—';$('simDrawdown').textContent='—';$('simWinRate').textContent='—';$('simProfitFactor').textContent='—';$('simFinalCash').textContent='—';$('simResults').innerHTML='<tr><td colspan="5" style="padding:10px;color:var(--muted)">Aucune stratégie retenue : échantillon de validation trop faible.</td></tr>';$('simLog').textContent=`Analyse terminée : ${tested} combinaisons explorées; aucune retenue avec le seuil minimal de 5 transactions sur apprentissage et validation. Test final non utilisé. Garde-fous simulés : 100 CAD maximum par position, perte journalière 5 %, 3 pertes consécutives maximum et pause de 3 bougies après stop-loss.`;return}
+ if(!top.length){PAPER.params=null;PAPER.active=false;paperUi();$('bestParams').textContent='Aucune stratégie admissible';$('bestExplain').textContent=`${bars.length} bougies analysées, mais aucune combinaison n'a atteint au moins 5 transactions en apprentissage ET 5 en validation. Il faut accumuler plus d'historique; le seuil n'est pas abaissé artificiellement.`;$('simGrade').textContent='ÉCHANTILLON INSUFFISANT';$('simGrade').className='tag neutral';$('simReturn').textContent='—';$('simTrades').textContent='—';$('simDrawdown').textContent='—';$('simWinRate').textContent='—';$('simProfitFactor').textContent='—';$('simFinalCash').textContent='—';$('simResults').innerHTML='<tr><td colspan="5" style="padding:10px;color:var(--muted)">Aucune stratégie retenue : échantillon de validation trop faible.</td></tr>';$('simLog').textContent=`Analyse terminée : ${tested} combinaisons explorées; aucune retenue avec le seuil minimal de 5 transactions sur apprentissage et validation. Test final non utilisé. Garde-fous simulés : 100 CAD maximum par position, perte journalière 5 %, 3 pertes consécutives maximum et pause de 3 bougies après stop-loss.`;return}
  const best=top[0],finalTest=backtest(bars,best.p,fee,slip,validEnd);
+ PAPER.params=(best.v.trades>=5&&best.v.ret>0)?{...best.p}:null;PAPER.active=false;PAPER.lastBarTime=null;PAPER.fee=fee;PAPER.slip=slip;paperUi();
  $('bestParams').textContent=`EMA ${best.p.fast}/${best.p.slow} · RSI ≥ ${best.p.rsi} · SL ${best.p.sl}% · TP ${best.p.tp}% · filtre tendance ${best.p.trendFilter?'activé':'désactivé'}`;
  $('bestExplain').textContent=`Apprentissage : ${best.a.ret.toFixed(2)} % / ${best.a.trades} trades. Validation : ${best.v.ret.toFixed(2)} % / ${best.v.trades} trades. Test indépendant : ${finalTest.ret.toFixed(2)} % net / ${finalTest.trades} trades.`;
  $('simReturn').textContent=(finalTest.ret>=0?'+':'')+finalTest.ret.toFixed(2)+' %';$('simReturn').className=finalTest.ret>=0?'positive':'negative';$('simTrades').textContent=finalTest.trades;$('simDrawdown').textContent=finalTest.dd.toFixed(2)+' %';$('simWinRate').textContent=finalTest.winRate.toFixed(1)+' %';$('simProfitFactor').textContent=Number.isFinite(finalTest.profitFactor)?finalTest.profitFactor.toFixed(2):'∞';$('simFinalCash').textContent=finalTest.cash.toFixed(2)+' CAD';
  const eligible=finalTest.trades>=5&&finalTest.ret>0&&finalTest.profitFactor>=1&&finalTest.dd<5;
  $('simGrade').textContent=finalTest.trades<5?'TEST TROP COURT':eligible?'TEST POSITIF · À SURVEILLER':'TEST NON CONCLUANT';$('simGrade').className='tag '+(eligible?'buy':'neutral');
  $('simResults').innerHTML=top.map((x,i)=>`<tr style="border-top:1px solid #ffffff14"><td style="padding:8px">${i+1}</td><td>EMA ${x.p.fast}/${x.p.slow}, RSI ${x.p.rsi}, SL ${x.p.sl}%, TP ${x.p.tp}%, filtre ${x.p.trendFilter?'oui':'non'}</td><td class="${x.v.ret>=0?'positive':'negative'}">${x.v.ret.toFixed(2)}%</td><td>${x.v.trades}</td><td>${x.v.dd.toFixed(2)}%</td></tr>`).join('');
- $('simLog').textContent=`Optimisation v1.5 : ${trainEnd} bougies d'apprentissage, ${validEnd-trainEnd} validation et ${bars.length-validEnd} test final indépendant. ${tested} combinaisons explorées; ${combos.length} admissibles classées uniquement sur validation (minimum 5 trades par période). Test final jamais utilisé pour sélectionner. Frais ${fee.toFixed(2)} % et glissement ${slip.toFixed(2)} % par côté. Risques simulés : 100 CAD maximum par position frais compris; stop journalier 5 %; 3 pertes consécutives maximum; pause 3 bougies après stop-loss. Résultats historiques exploratoires, sans garantie future.`;
+ $('simLog').textContent=`Optimisation v1.5.1 : ${trainEnd} bougies d'apprentissage, ${validEnd-trainEnd} validation et ${bars.length-validEnd} test final indépendant. ${tested} combinaisons explorées; ${combos.length} admissibles classées uniquement sur validation (minimum 5 trades par période). Test final jamais utilisé pour sélectionner. Frais ${fee.toFixed(2)} % et glissement ${slip.toFixed(2)} % par côté. Risques simulés : 100 CAD maximum par position frais compris; stop journalier 5 %; 3 pertes consécutives maximum; pause 3 bougies après stop-loss. Résultats historiques exploratoires, sans garantie future.`;
 }
 $('runOptimizer').addEventListener('click',optimizeNDAX);
 $('simInterval').addEventListener('change',()=>{const v=String($('simInterval').value),label=({'60':'1m','300':'5m','900':'15m','3600':'1h'})[v]||'1m';interval=label;document.querySelectorAll('#intervals button').forEach(b=>b.classList.toggle('active',b.dataset.interval===label));SIM.bars=[];connectNDAX()});
