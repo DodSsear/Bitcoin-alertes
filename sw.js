@@ -1,4 +1,4 @@
-const CACHE='bitcoin-alertes-v1-6-2-progressive-optimizer';
+const CACHE='bitcoin-alertes-v1-7-0-1500-candles';
 const CORE=['./','./index.html','./manifest.webmanifest','./icon.svg'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(CORE)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
